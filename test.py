@@ -18,6 +18,20 @@ from utils.metrics import ap_per_class, ConfusionMatrix
 from utils.plots import plot_images, output_to_target, plot_study_txt
 from utils.torch_utils import select_device, time_synchronized
 
+def get_mse_between_2box(targets, outputs):
+    return torch.mean((targets - outputs) ** 2)
+def get_mse(output, targets, width, height):
+    print(output.shape)
+    output = output.clone().cpu()
+    arg_max = torch.argmax(output[:, :, 4], dim=1).reshape(output.size()[0])
+    res = torch.zeros((output.size()[0], output.size()[2]))
+    for i in range(output.size()[0]):
+        res[i] = output[i, arg_max[i], :]
+    output = res
+    targets = targets.clone().cpu()
+    output[:, 5:13] /= torch.Tensor([width, height, width, height, width, height, width, height]).cpu()
+    return get_mse_between_2box(targets[:, 6:14], output[:, 5:13])
+
 
 def test(data,
          weights=None,
@@ -108,7 +122,8 @@ def test(data,
             t = time_synchronized()
             inf_out, train_out = model(img, augment=augment)  # inference and training outputs
             t0 += time_synchronized() - t
-
+            mse = get_mse(inf_out, targets, width, height)
+            print(mse)
             # Compute loss
             if training:
                 loss += compute_loss([x.float() for x in train_out], targets, model)[1][:3]  # box, obj, cls
@@ -123,7 +138,7 @@ def test(data,
 
         # Statistics per image
         for si, pred in enumerate(output):
-            pred = torch.cat((pred[:, :5], pred[:, 15:]), 1) # throw landmark in thresh
+            pred = torch.cat((pred[:, :5], pred[:, 13:]), 1) # throw landmark in thresh
             labels = targets[targets[:, 0] == si, 1:]
             nl = len(labels)
             tcls = labels[:, 0].tolist() if nl else []  # target class

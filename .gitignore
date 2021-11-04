@@ -1,0 +1,7 @@
+*.pyc
+*.png 
+*.jpg
+runs/*
+*.zip
+__pycache__/
+*.py[cod]

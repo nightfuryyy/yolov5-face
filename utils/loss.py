@@ -109,6 +109,7 @@ class LandmarksLoss(nn.Module):
         self.alpha = alpha
 
     def forward(self, pred, truel, mask):
+        # print(pred.size(), truel.size(), mask.size())
         loss = self.loss_fcn(pred*mask, truel*mask)
         return loss / (torch.sum(mask) + 10e-14)
 
@@ -136,7 +137,7 @@ def compute_loss(p, targets, model):  # predictions, targets, model
     # Losses
     nt = 0  # number of targets
     no = len(p)  # number of outputs
-    balance = [4.0, 1.0, 0.4] if no == 3 else [4.0, 1.0, 0.4, 0.1]  # P3-5 or P3-6
+    balance = [1.0, 1.0, 2.0] if no == 3 else [4.0, 1.0, 0.4, 0.1]  # P3-5 or P3-6
     for i, pi in enumerate(p):  # layer index, layer predictions
         b, a, gj, gi = indices[i]  # image, anchor, gridy, gridx
         tobj = torch.zeros_like(pi[..., 0], device=device)  # target obj
@@ -168,13 +169,13 @@ def compute_loss(p, targets, model):  # predictions, targets, model
 
             #landmarks loss
             #plandmarks = ps[:,5:15].sigmoid() * 8. - 4.
-            plandmarks = ps[:,5:15]
+            plandmarks = ps[:,5:13]
 
             plandmarks[:, 0:2] = plandmarks[:, 0:2] * anchors[i]
             plandmarks[:, 2:4] = plandmarks[:, 2:4] * anchors[i]
             plandmarks[:, 4:6] = plandmarks[:, 4:6] * anchors[i]
             plandmarks[:, 6:8] = plandmarks[:, 6:8] * anchors[i]
-            plandmarks[:, 8:10] = plandmarks[:,8:10] * anchors[i]
+            # plandmarks[:, 8:10] = plandmarks[:,8:10] * anchors[i]
 
             lmark += landmarks_loss(plandmarks, tlandmarks[i], lmks_mask[i])
 
@@ -199,7 +200,7 @@ def build_targets(p, targets, model):
     na, nt = det.na, targets.shape[0]  # number of anchors, targets
     tcls, tbox, indices, anch, landmarks, lmks_mask = [], [], [], [], [], []
     #gain = torch.ones(7, device=targets.device)  # normalized to gridspace gain
-    gain = torch.ones(17, device=targets.device)
+    gain = torch.ones(15, device=targets.device)
     ai = torch.arange(na, device=targets.device).float().view(na, 1).repeat(1, nt)  # same as .repeat_interleave(nt)
     targets = torch.cat((targets.repeat(na, 1, 1), ai[:, :, None]), 2)  # append anchor indices
 
@@ -213,7 +214,7 @@ def build_targets(p, targets, model):
         anchors = det.anchors[i]
         gain[2:6] = torch.tensor(p[i].shape)[[3, 2, 3, 2]]  # xyxy gain
         #landmarks 10
-        gain[6:16] = torch.tensor(p[i].shape)[[3, 2, 3, 2, 3, 2, 3, 2, 3, 2]]  # xyxy gain
+        gain[6:14] = torch.tensor(p[i].shape)[[3, 2, 3, 2, 3, 2, 3, 2]]  # xyxy gain
 
         # Match targets to anchors
         t = targets * gain
@@ -244,14 +245,14 @@ def build_targets(p, targets, model):
         gi, gj = gij.T  # grid xy indices
 
         # Append
-        a = t[:, 16].long()  # anchor indices
+        a = t[:, 14].long()  # anchor indices
         indices.append((b, a, gj.clamp_(0, gain[3] - 1), gi.clamp_(0, gain[2] - 1)))  # image, anchor, grid indices
         tbox.append(torch.cat((gxy - gij, gwh), 1))  # box
         anch.append(anchors[a])  # anchors
         tcls.append(c)  # class
 
         #landmarks
-        lks = t[:,6:16]
+        lks = t[:,6:14]
         #lks_mask = lks > 0
         #lks_mask = lks_mask.float()
         lks_mask = torch.where(lks < 0, torch.full_like(lks, 0.), torch.full_like(lks, 1.0))
@@ -262,7 +263,7 @@ def build_targets(p, targets, model):
         lks[:, [2, 3]] = (lks[:, [2, 3]] - gij)
         lks[:, [4, 5]] = (lks[:, [4, 5]] - gij)
         lks[:, [6, 7]] = (lks[:, [6, 7]] - gij)
-        lks[:, [8, 9]] = (lks[:, [8, 9]] - gij)
+        # lks[:, [8, 9]] = (lks[:, [8, 9]] - gij)
 
         '''
         #anch_w = torch.ones(5, device=targets.device).fill_(anchors[0][0])

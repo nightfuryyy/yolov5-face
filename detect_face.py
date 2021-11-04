@@ -31,8 +31,8 @@ def scale_coords_landmarks(img1_shape, coords, img0_shape, ratio_pad=None):
         gain = ratio_pad[0][0]
         pad = ratio_pad[1]
 
-    coords[:, [0, 2, 4, 6, 8]] -= pad[0]  # x padding
-    coords[:, [1, 3, 5, 7, 9]] -= pad[1]  # y padding
+    coords[:, [0, 2, 4, 6]] -= pad[0]  # x padding
+    coords[:, [1, 3, 5, 7]] -= pad[1]  # y padding
     coords[:, :10] /= gain
     #clip_coords(coords, img0_shape)
     coords[:, 0].clamp_(0, img0_shape[1])  # x1
@@ -43,8 +43,8 @@ def scale_coords_landmarks(img1_shape, coords, img0_shape, ratio_pad=None):
     coords[:, 5].clamp_(0, img0_shape[0])  # y3
     coords[:, 6].clamp_(0, img0_shape[1])  # x4
     coords[:, 7].clamp_(0, img0_shape[0])  # y4
-    coords[:, 8].clamp_(0, img0_shape[1])  # x5
-    coords[:, 9].clamp_(0, img0_shape[0])  # y5
+    # coords[:, 8].clamp_(0, img0_shape[1])  # x5
+    # coords[:, 9].clamp_(0, img0_shape[0])  # y5
     return coords
 
 def show_results(img, xywh, conf, landmarks, class_num):
@@ -58,10 +58,10 @@ def show_results(img, xywh, conf, landmarks, class_num):
 
     clors = [(255,0,0),(0,255,0),(0,0,255),(255,255,0),(0,255,255)]
 
-    for i in range(5):
+    for i in range(4):
         point_x = int(landmarks[2 * i] * w)
         point_y = int(landmarks[2 * i + 1] * h)
-        cv2.circle(img, (point_x, point_y), tl+1, clors[i], -1)
+        cv2.circle(img, (point_x, point_y), tl+1, clors[i], 5, )
 
     tf = max(tl - 1, 1)  # font thickness
     label = str(conf)[:5]
@@ -72,7 +72,7 @@ def show_results(img, xywh, conf, landmarks, class_num):
 
 def detect_one(model, image_path, device):
     # Load model
-    img_size = 800
+    img_size = 256
     conf_thres = 0.3
     iou_thres = 0.5
 
@@ -103,17 +103,19 @@ def detect_one(model, image_path, device):
     # Inference
     t1 = time_synchronized()
     pred = model(img)[0]
+    print("time=== ", time_synchronized() - t1)
+
 
     # Apply NMS
     pred = non_max_suppression_face(pred, conf_thres, iou_thres)
-
+    print(pred)
     print('img.shape: ', img.shape)
     print('orgimg.shape: ', orgimg.shape)
 
     # Process detections
     for i, det in enumerate(pred):  # detections per image
         gn = torch.tensor(orgimg.shape)[[1, 0, 1, 0]].to(device)  # normalization gain whwh
-        gn_lks = torch.tensor(orgimg.shape)[[1, 0, 1, 0, 1, 0, 1, 0, 1, 0]].to(device)  # normalization gain landmarks
+        gn_lks = torch.tensor(orgimg.shape)[[1, 0, 1, 0, 1, 0, 1, 0]].to(device)  # normalization gain landmarks
         if len(det):
             # Rescale boxes from img_size to im0 size
             det[:, :4] = scale_coords(img.shape[2:], det[:, :4], orgimg.shape).round()
@@ -122,13 +124,13 @@ def detect_one(model, image_path, device):
             for c in det[:, -1].unique():
                 n = (det[:, -1] == c).sum()  # detections per class
 
-            det[:, 5:15] = scale_coords_landmarks(img.shape[2:], det[:, 5:15], orgimg.shape).round()
+            det[:, 5:13] = scale_coords_landmarks(img.shape[2:], det[:, 5:13], orgimg.shape).round()
 
             for j in range(det.size()[0]):
                 xywh = (xyxy2xywh(det[j, :4].view(1, 4)) / gn).view(-1).tolist()
                 conf = det[j, 4].cpu().numpy()
-                landmarks = (det[j, 5:15].view(1, 10) / gn_lks).view(-1).tolist()
-                class_num = det[j, 15].cpu().numpy()
+                landmarks = (det[j, 5:13].view(1, 8) / gn_lks).view(-1).tolist()
+                class_num = det[j, 13].cpu().numpy()
                 orgimg = show_results(orgimg, xywh, conf, landmarks, class_num)
 
     cv2.imwrite('result.jpg', orgimg)

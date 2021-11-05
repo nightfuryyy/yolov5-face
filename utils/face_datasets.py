@@ -512,6 +512,7 @@ def load_image(self, index):
     img = self.imgs[index]
     if img is None:  # not cached
         path = self.img_files[index]
+        path = "../" + "/".join(path.split("/")[-3:])
         img = cv2.imread(path)  # BGR
         assert img is not None, 'Image Not Found ' + path
         h0, w0 = img.shape[:2]  # orig hw
@@ -591,6 +592,11 @@ def letterbox(img, new_shape=(640, 640), color=(114, 114, 114), auto=True, scale
     img = cv2.copyMakeBorder(img, top, bottom, left, right, cv2.BORDER_CONSTANT, value=color)  # add border
     return img, ratio, (dw, dh)
 
+def get_box_from_landmark(landmarks, n):
+    x = landmarks[:, ::2] 
+    y = landmarks[:, 1::2]
+    xy = np.concatenate((x.min(1), y.min(1), x.max(1), y.max(1))).reshape(4, n).T
+    return xy
 
 def random_perspective(img, targets=(), degrees=10, translate=.1, scale=.1, shear=10, perspective=0.0, border=(0, 0)):
     # torchvision.transforms.RandomAffine(degrees=(-10, 10), translate=(.1, .1), scale=(.9, 1.1), shear=(-10, 10))
@@ -702,8 +708,8 @@ def random_perspective(img, targets=(), degrees=10, translate=.1, scale=.1, shea
         # filter candidates
         i = box_candidates(box1=targets[:, 1:5].T * s, box2=xy.T)
         targets = targets[i]
-        targets[:, 1:5] = xy[i]
-
+        box = get_box_from_landmark(landmarks, n)
+        targets[:, 1:5] = box[i]
     return img, targets
 
 

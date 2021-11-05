@@ -21,7 +21,7 @@ from utils.torch_utils import select_device, time_synchronized
 def get_mse_between_2box(targets, outputs):
     return torch.mean((targets - outputs) ** 2)
 def get_mse(output, targets, width, height):
-    print(output.shape)
+    # print(output.shape)
     output = output.clone().cpu()
     arg_max = torch.argmax(output[:, :, 4], dim=1).reshape(output.size()[0])
     res = torch.zeros((output.size()[0], output.size()[2]))
@@ -110,6 +110,7 @@ def test(data,
     p, r, f1, mp, mr, map50, map, t0, t1 = 0., 0., 0., 0., 0., 0., 0., 0., 0.
     loss = torch.zeros(3, device=device)
     jdict, stats, ap, ap_class, wandb_images = [], [], [], [], []
+    mses = []
     for batch_i, (img, targets, paths, shapes) in enumerate(tqdm(dataloader, desc=s)):
         img = img.to(device, non_blocking=True)
         img = img.half() if half else img.float()  # uint8 to fp16/32
@@ -123,7 +124,7 @@ def test(data,
             inf_out, train_out = model(img, augment=augment)  # inference and training outputs
             t0 += time_synchronized() - t
             mse = get_mse(inf_out, targets, width, height)
-            print(mse)
+            mses.append(mse)
             # Compute loss
             if training:
                 loss += compute_loss([x.float() for x in train_out], targets, model)[1][:3]  # box, obj, cls
@@ -241,7 +242,10 @@ def test(data,
     # Print results
     pf = '%20s' + '%12.3g' * 6  # print format
     print(pf % ('all', seen, nt.sum(), mp, mr, map50, map))
-
+    s = 0 
+    for mse in mses:
+      s += mse 
+    print("MSE ============= ", s / len(mses))
     # Print results per class
     if verbose and nc > 1 and len(stats):
         for i, c in enumerate(ap_class):

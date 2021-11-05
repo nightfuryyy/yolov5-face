@@ -328,7 +328,7 @@ def train(hyp, opt, device, tb_writer=None, wandb=None):
         scheduler.step()
 
         # DDP process 0 or single-GPU
-        if rank in [-1, 0] and epoch > 0:
+        if rank in [-1, 0] and epoch > 20:
             # mAP
             if ema:
                 ema.update_attr(model, include=['yaml', 'nc', 'hyp', 'gr', 'names', 'stride', 'class_weights'])
@@ -378,7 +378,7 @@ def train(hyp, opt, device, tb_writer=None, wandb=None):
                             'wandb_id': wandb_run.id if wandb else None}
 
                 # Save last, best and delete
-                torch.save(ckpt, last)
+                torch.save(ckpt, wdir / str(epoch) + ".pt")                
                 if best_fitness == fi:
                     torch.save(ckpt, best)
                 del ckpt
@@ -435,7 +435,7 @@ if __name__ == '__main__':
     parser.add_argument('--data', type=str, default='data/widerface.yaml', help='data.yaml path')
     parser.add_argument('--hyp', type=str, default='data/hyp.scratch.yaml', help='hyperparameters path')
     parser.add_argument('--epochs', type=int, default=100)
-    parser.add_argument('--batch-size', type=int, default=16, help='total batch size for all GPUs')
+    parser.add_argument('--batch-size', type=int, default=4, help='total batch size for all GPUs')
     parser.add_argument('--img-size', nargs='+', type=int, default=[800, 800], help='[train, test] image sizes')
     parser.add_argument('--rect', action='store_true', help='rectangular training')
     parser.add_argument('--resume', nargs='?', const=True, default=False, help='resume most recent training')

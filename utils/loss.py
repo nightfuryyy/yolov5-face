@@ -114,7 +114,7 @@ class LandmarksLoss(nn.Module):
         return loss / (torch.sum(mask) + 10e-14)
 
 
-def compute_loss(p, targets, model):  # predictions, targets, model
+def compute_loss(p, targets, model, is_contain_landmark=True):  # predictions, targets, model
     device = targets.device
     lcls, lbox, lobj, lmark = torch.zeros(1, device=device), torch.zeros(1, device=device), torch.zeros(1, device=device), torch.zeros(1, device=device)
     tcls, tbox, indices, anchors, tlandmarks, lmks_mask = build_targets(p, targets, model)  # targets
@@ -124,7 +124,8 @@ def compute_loss(p, targets, model):  # predictions, targets, model
     BCEcls = nn.BCEWithLogitsLoss(pos_weight=torch.tensor([h['cls_pw']], device=device))  # weight=model.class_weights)
     BCEobj = nn.BCEWithLogitsLoss(pos_weight=torch.tensor([h['obj_pw']], device=device))
 
-    landmarks_loss = LandmarksLoss(1.0)
+    if is_contain_landmark:
+        landmarks_loss = LandmarksLoss(1.0)
 
     # Class label smoothing https://arxiv.org/pdf/1902.04103.pdf eqn 3
     cp, cn = smooth_BCE(eps=0.0)
@@ -137,11 +138,10 @@ def compute_loss(p, targets, model):  # predictions, targets, model
     # Losses
     nt = 0  # number of targets
     no = len(p)  # number of outputs
-    balance = [1.0, 1.0, 2.0] if no == 3 else [4.0, 1.0, 0.4, 0.1]  # P3-5 or P3-6
+    balance = [0.05, 0.225, 0.225] if no == 3 else [4.0, 1.0, 0.4, 0.1]  # P3-5 or P3-6
     for i, pi in enumerate(p):  # layer index, layer predictions
         b, a, gj, gi = indices[i]  # image, anchor, gridy, gridx
         tobj = torch.zeros_like(pi[..., 0], device=device)  # target obj
-
         n = b.shape[0]  # number of targets
         if n:
             nt += n  # cumulative targets
@@ -151,7 +151,7 @@ def compute_loss(p, targets, model):  # predictions, targets, model
             pxy = ps[:, :2].sigmoid() * 2. - 0.5
             pwh = (ps[:, 2:4].sigmoid() * 2) ** 2 * anchors[i]
             pbox = torch.cat((pxy, pwh), 1)  # predicted box
-            iou = bbox_iou(pbox.T, tbox[i], x1y1x2y2=False, CIoU=True)  # iou(prediction, target)
+            iou = bbox_iou(pbox.T, tbox[i], x1y1x2y2=False, GIoU=False, DIoU=False, CIoU=True)  # iou(prediction, target)
             lbox += (1.0 - iou).mean()  # iou loss
 
             # Objectness
@@ -169,15 +169,16 @@ def compute_loss(p, targets, model):  # predictions, targets, model
 
             #landmarks loss
             #plandmarks = ps[:,5:15].sigmoid() * 8. - 4.
-            plandmarks = ps[:,5:13]
+            if is_contain_landmark:
+                plandmarks = ps[:,5:13]
 
-            plandmarks[:, 0:2] = plandmarks[:, 0:2] * anchors[i]
-            plandmarks[:, 2:4] = plandmarks[:, 2:4] * anchors[i]
-            plandmarks[:, 4:6] = plandmarks[:, 4:6] * anchors[i]
-            plandmarks[:, 6:8] = plandmarks[:, 6:8] * anchors[i]
-            # plandmarks[:, 8:10] = plandmarks[:,8:10] * anchors[i]
+                plandmarks[:, 0:2] = plandmarks[:, 0:2] * anchors[i]
+                plandmarks[:, 2:4] = plandmarks[:, 2:4] * anchors[i]
+                plandmarks[:, 4:6] = plandmarks[:, 4:6] * anchors[i]
+                plandmarks[:, 6:8] = plandmarks[:, 6:8] * anchors[i]
+                # plandmarks[:, 8:10] = plandmarks[:,8:10] * anchors[i]
 
-            lmark += landmarks_loss(plandmarks, tlandmarks[i], lmks_mask[i])
+                lmark += landmarks_loss(plandmarks, tlandmarks[i], lmks_mask[i])
 
 
         lobj += BCEobj(pi[..., 4], tobj) * balance[i]  # obj loss
@@ -186,12 +187,16 @@ def compute_loss(p, targets, model):  # predictions, targets, model
     lbox *= h['box'] * s
     lobj *= h['obj'] * s * (1.4 if no == 4 else 1.)
     lcls *= h['cls'] * s
-    lmark *= h['landmark'] * s
 
     bs = tobj.shape[0]  # batch size
 
-    loss = lbox + lobj + lcls + lmark
-    return loss * bs, torch.cat((lbox, lobj, lcls, lmark, loss)).detach()
+    if is_contain_landmark:
+        lmark *= h['landmark'] * s
+        loss = lbox + lobj + lcls + lmark
+        return loss * bs, torch.cat((lbox, lobj, lcls, lmark, loss)).detach()
+    else:
+        loss = lbox + lobj + lcls
+        return loss * bs, torch.cat((lbox, lobj, lcls, loss)).detach()
 
 
 def build_targets(p, targets, model):
@@ -255,7 +260,8 @@ def build_targets(p, targets, model):
         lks = t[:,6:14]
         #lks_mask = lks > 0
         #lks_mask = lks_mask.float()
-        lks_mask = torch.where(lks < 0, torch.full_like(lks, 0.), torch.full_like(lks, 1.0))
+        lks_mask = torch.full_like(lks, 1.0)
+        # lks_mask = torch.where(lks < 0, torch.full_like(lks, 0.), torch.full_like(lks, 1.0))
 
         #应该是关键点的坐标除以anch的宽高才对，便于模型学习。使用gwh会导致不同关键点的编码不同，没有统一的参考标准
 

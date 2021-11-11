@@ -9,7 +9,7 @@ from itertools import repeat
 from multiprocessing.pool import ThreadPool
 from pathlib import Path
 from threading import Thread
-
+from shapely.geometry import Polygon
 import cv2
 import numpy as np
 import torch
@@ -124,6 +124,7 @@ class LoadFaceImagesAndLabels(Dataset):  # for training/testing
         self.mosaic = self.augment and not self.rect  # load 4 images at a time into a mosaic (only during training)
         self.mosaic_border = [-img_size // 2, -img_size // 2]
         self.stride = stride
+        self.augmentations = get_augmentations()
 
         try:
             f = []  # image files
@@ -291,9 +292,12 @@ class LoadFaceImagesAndLabels(Dataset):  # for training/testing
 
             # Letterbox
             shape = self.batch_shapes[self.batch[index]] if self.rect else self.img_size  # final letterboxed shape
-            img, ratio, pad = letterbox(img, shape, auto=False, scaleup=self.augment)
-            shapes = (h0, w0), ((h / h0, w / w0), pad)  # for COCO mAP rescaling
+            # img, ratio, pad = letterbox(img, shape, auto=False, scaleup=self.augment)
+            # shapes = (h0, w0), ((h / h0, w / w0), pad)  # for COCO mAP rescaling
 
+            #resize only #scaleFill = True
+            img, ratio, pad = letterbox(img, shape, auto=False, scaleFill=True, scaleup=self.augment)
+            shapes = (h0, w0), ((h / h0, w / w0), pad) 
             # Load labels
             labels = []
             x = self.labels[index]
@@ -307,21 +311,21 @@ class LoadFaceImagesAndLabels(Dataset):  # for training/testing
 
                 #labels[:, 5] = ratio[0] * w * x[:, 5] + pad[0]  # pad width
                 labels[:, 5] = np.array(x[:, 5] > 0, dtype=np.int32) * (ratio[0] * w * x[:, 5] + pad[0]) + (
-                    np.array(x[:, 5] > 0, dtype=np.int32) - 1)
+                    np.array(x[:, 5] >= 0, dtype=np.int32) - 1)
                 labels[:, 6] = np.array(x[:, 6] > 0, dtype=np.int32) * (ratio[1] * h * x[:, 6] + pad[1]) + (
-                    np.array(x[:, 6] > 0, dtype=np.int32) - 1)
+                    np.array(x[:, 6] >= 0, dtype=np.int32) - 1)
                 labels[:, 7] = np.array(x[:, 7] > 0, dtype=np.int32) * (ratio[0] * w * x[:, 7] + pad[0]) + (
-                    np.array(x[:, 7] > 0, dtype=np.int32) - 1)
+                    np.array(x[:, 7] >= 0, dtype=np.int32) - 1)
                 labels[:, 8] = np.array(x[:, 8] > 0, dtype=np.int32) * (ratio[1] * h * x[:, 8] + pad[1]) + (
-                    np.array(x[:, 8] > 0, dtype=np.int32) - 1)
+                    np.array(x[:, 8] >= 0, dtype=np.int32) - 1)
                 labels[:, 9] = np.array(x[:, 5] > 0, dtype=np.int32) * (ratio[0] * w * x[:, 9] + pad[0]) + (
-                    np.array(x[:, 9] > 0, dtype=np.int32) - 1)
+                    np.array(x[:, 9] >= 0, dtype=np.int32) - 1)
                 labels[:, 10] = np.array(x[:, 5] > 0, dtype=np.int32) * (ratio[1] * h * x[:, 10] + pad[1]) + (
-                    np.array(x[:, 10] > 0, dtype=np.int32) - 1)
+                    np.array(x[:, 10] >= 0, dtype=np.int32) - 1)
                 labels[:, 11] = np.array(x[:, 11] > 0, dtype=np.int32) * (ratio[0] * w * x[:, 11] + pad[0]) + (
-                    np.array(x[:, 11] > 0, dtype=np.int32) - 1)
+                    np.array(x[:, 11] >= 0, dtype=np.int32) - 1)
                 labels[:, 12] = np.array(x[:, 12] > 0, dtype=np.int32) * (ratio[1] * h * x[:, 12] + pad[1]) + (
-                    np.array(x[:, 12] > 0, dtype=np.int32) - 1)
+                    np.array(x[:, 12] >= 0, dtype=np.int32) - 1)
                 # labels[:, 13] = np.array(x[:, 13] > 0, dtype=np.int32) * (ratio[0] * w * x[:, 13] + pad[0]) + (
                 #     np.array(x[:, 13] > 0, dtype=np.int32) - 1)
                 # labels[:, 14] = np.array(x[:, 14] > 0, dtype=np.int32) * (ratio[1] * h * x[:, 14] + pad[1]) + (
@@ -336,7 +340,6 @@ class LoadFaceImagesAndLabels(Dataset):  # for training/testing
                                                  scale=hyp['scale'],
                                                  shear=hyp['shear'],
                                                  perspective=hyp['perspective'])
-
             # Augment colorspace
             augment_hsv(img, hgain=hyp['hsv_h'], sgain=hyp['hsv_s'], vgain=hyp['hsv_v'])
 
@@ -355,6 +358,7 @@ class LoadFaceImagesAndLabels(Dataset):  # for training/testing
             labels[:, [6, 8, 10, 12]] /= img.shape[0]  # normalized landmark y 0-1
             labels[:, [6, 8, 10, 12]] = np.where(labels[:, [6, 8, 10, 12]] < 0, -1, labels[:, [6, 8, 10, 12]])
 
+        # print(labels)
         if self.augment:
             # flip up-down
             if random.random() < hyp['flipud']:
@@ -362,10 +366,13 @@ class LoadFaceImagesAndLabels(Dataset):  # for training/testing
                 if nL:
                     labels[:, 2] = 1 - labels[:, 2]
 
-                    labels[:, 6] = np.where(labels[:,6] < 0, -1, 1 - labels[:, 6])
-                    labels[:, 8] = np.where(labels[:, 8] < 0, -1, 1 - labels[:, 8])
-                    labels[:, 10] = np.where(labels[:, 10] < 0, -1, 1 - labels[:, 10])
-                    labels[:, 12] = np.where(labels[:, 12] < 0, -1, 1 - labels[:, 12])
+                    labels[:, [6, 8, 10, 12]] = 1 - labels[:, [6, 8, 10, 12]]
+                    
+                    # labels[:, 6] = np.where(labels[:,6] < 0, -1, 1 - labels[:, 6])
+                    # labels[:, 8] = np.where(labels[:, 8] < 0, -1, 1 - labels[:, 8])
+                    # labels[:, 10] = np.where(labels[:, 10] < 0, -1, 1 - labels[:, 10])
+                    # labels[:, 12] = np.where(labels[:, 12] < 0, -1, 1 - labels[:, 12])
+
                     # labels[:, 14] = np.where(labels[:, 14] < 0, -1, 1 - labels[:, 14])
 
             # flip left-right
@@ -374,16 +381,22 @@ class LoadFaceImagesAndLabels(Dataset):  # for training/testing
                 if nL:
                     labels[:, 1] = 1 - labels[:, 1]
 
-                    labels[:, 5] = np.where(labels[:, 5] < 0, -1, 1 - labels[:, 5])
-                    labels[:, 7] = np.where(labels[:, 7] < 0, -1, 1 - labels[:, 7])
-                    labels[:, 9] = np.where(labels[:, 9] < 0, -1, 1 - labels[:, 9])
-                    labels[:, 11] = np.where(labels[:, 11] < 0, -1, 1 - labels[:, 11])
+                    labels[:, [5, 7, 9, 11]] = 1 - labels[:, [5, 7, 9, 11]]
+
+                    # labels[:, 5] = np.where(labels[:, 5] < 0, -1, 1 - labels[:, 5])
+                    # labels[:, 7] = np.where(labels[:, 7] < 0, -1, 1 - labels[:, 7])
+                    # labels[:, 9] = np.where(labels[:, 9] < 0, -1, 1 - labels[:, 9])
+                    # labels[:, 11] = np.where(labels[:, 11] < 0, -1, 1 - labels[:, 11])
+
                     # labels[:, 13] = np.where(labels[:, 13] < 0, -1, 1 - labels[:, 13])
 
         labels_out = torch.zeros((nL, 14))
         if nL:
             labels_out[:, 1:] = torch.from_numpy(labels)
-        #     showlabels(img, labels[:, 1:5], labels[:, 5:13], self.img_files[index])
+            # showlabels(img, labels[:, 1:5], labels[:, 5:13], self.img_files[index][:-4] + str(random.randint(0, 1000)) + ".jpg")
+
+        if self.augment:
+            img = self.augmentations(image=img)["image"] 
 
         # Convert
         img = img[:, :, ::-1].transpose(2, 0, 1)  # BGR to RGB, to 3x416x416
@@ -400,8 +413,70 @@ class LoadFaceImagesAndLabels(Dataset):  # for training/testing
             l[:, 0] = i  # add target image index for build_targets()
         return torch.stack(img, 0), torch.cat(label, 0), path, shapes
 
+# back_2052353 # back_2031421 # 1615946796202
+import albumentations
+def get_augmentations():
+    mean = (0.485, 0.456, 0.406)
+    std = (0.229, 0.224, 0.225)
+    train_augmentations = albumentations.Compose(
+        [
+            # albumentations.Transpose(p=0.5),
+            # albumentations.HorizontalFlip(p=0.5),
+            # albumentations.VerticalFlip(p=0.5),
+            # albumentations.ShiftScaleRotate(shift_limit=0.0, 
+            #     scale_limit=0.0, rotate_limit=5, interpolation=1, border_mode=4, value=None, mask_value=None, shift_limit_x=None, shift_limit_y=None, always_apply=False, p=0.3
+            # ),
+            # albumentations.OneOf([
+            # albumentations.augmentations.crops.transforms.RandomSizedCrop([int(cfg.data.input_size[0] * 0.95), cfg.data.input_size[0]], cfg.data.input_size[0], cfg.data.input_size[1], w2h_ratio=0.75, interpolation=1, always_apply=False, p=1.0),
+            # albumentations.Sequential([
+            #     albumentations.augmentations.geometric.transforms.Affine(
+            #         # scale=(0.95, 1.0), 
+            #         rotate=5, 
+            #         fit_output=True,
+            #         p=1.0
+            #     ),
+            #     albumentations.augmentations.geometric.resize.Resize(cfg.data.input_size[0], cfg.data.input_size[1])
+            #     ])
+            # ], p=0.4),
+            
+            # albumentations.augmentations.transforms.ColorJitter(
+            #     brightness=0.1, contrast=0.3, saturation=0.3, hue=0.015, p = 0.5
+            #     # brightness=0.3, contrast=0.3, saturation=0.7, hue=0.0, p = 0.5
+            # ),
+            # albumentations.augmentations.transforms.Equalize(
+            #     by_channels=False,
+            #     p=0.2
+            # ),
+            albumentations.OneOf([
+                albumentations.Blur(
+                    blur_limit=(3, 11),
+                    p=0.8
+                ),
+                albumentations.MedianBlur(
+                    blur_limit=(3,5),
+                    p=0.1
+                ),
+                albumentations.MotionBlur(
+                    blur_limit=(3,5),
+                    p=0.1
+                ),
+            ], p=0.3),
+            # albumentations.augmentations.transforms.CLAHE(
+            #     clip_limit=8.0, tile_grid_size=(8, 8), always_apply=False, p=0.3
+            # ),
+            # albumentations.augmentations.transforms.GaussNoise(
+            #     var_limit=(0, 20), p=0.2
+            # ),
+            # albumentations.augmentations.transforms.JpegCompression(
+            #     quality_lower=99, quality_upper=100, p=1.0
+            # ),
+        ]
+    )
+
+    return train_augmentations
 
 def showlabels(img, boxs, landmarks, path):
+    img = img.copy()
     for box in boxs:
         x,y,w,h = box[0] * img.shape[1], box[1] * img.shape[0], box[2] * img.shape[1], box[3] * img.shape[0]
         #cv2.rectangle(image, (x,y), (x+w,y+h), (0,255,0), 2)
@@ -410,13 +485,260 @@ def showlabels(img, boxs, landmarks, path):
     for landmark in landmarks:
         #cv2.circle(img,(60,60),30,(0,0,255))
         for i in range(4):
+            if landmark[2*i] >= 1.0 or landmark[2*i] < 0 or landmark[2*i+1] >= 1.0 or landmark[2*i+1] < 0:
+                print("aaaaaaaaaaaaaaaaaa")
+                # nho thiet ket lai gen label
+                print(path)
+                print(landmark)
             cv2.circle(img, (int(landmark[2*i] * img.shape[1]), int(landmark[2*i+1]*img.shape[0])), 3 ,(0,0,255), -1)
     path = path.replace("/", "_")
-    print(path)
+    # print(path)
     cv2.imwrite("test_image/" + path + str(random.randint(0, 1000)) + "test.jpg", img)
     # cv2.imshow('test', img)
     # cv2.waitKey(0)
 
+def find_intersection(e1, e2) :
+    p0, p1 = e1
+    p2, p3 = e2
+    s10_x = p1[0] - p0[0]
+    s10_y = p1[1] - p0[1]
+    s32_x = p3[0] - p2[0]
+    s32_y = p3[1] - p2[1]
+
+    denom = s10_x * s32_y - s32_x * s10_y
+
+    if denom == 0 : return None # collinear
+
+    denom_is_positive = denom > 0
+
+    s02_x = p0[0] - p2[0]
+    s02_y = p0[1] - p2[1]
+
+    s_numer = s10_x * s02_y - s10_y * s02_x
+
+    if (s_numer < 0) == denom_is_positive : return None # no collision
+
+    t_numer = s32_x * s02_y - s32_y * s02_x
+
+    if (t_numer < 0) == denom_is_positive : return None # no collision
+
+    if (s_numer > denom) == denom_is_positive or (t_numer > denom) == denom_is_positive : return None # no collision
+
+
+    # collision detected
+
+    t = t_numer / denom
+
+    intersection_point = [ p0[0] + (t * s10_x), p0[1] + (t * s10_y) ]
+
+
+    return intersection_point
+
+def correct_landmark_one_point(landmark, num_wrong, four_edges):
+    num_wrong = num_wrong * 2
+
+    wrong_point = [landmark[num_wrong], landmark[num_wrong + 1]]
+    next_point = [landmark[(num_wrong + 2) % 8], landmark[(num_wrong + 3) % 8]]
+    previous_point = [landmark[(num_wrong + 6) % 8], landmark[(num_wrong + 7) % 8]]
+    for edge in four_edges:
+        col_pre = find_intersection(edge, [previous_point, wrong_point])
+        if col_pre is not None:
+            break
+    for edge in four_edges:
+        col_next = find_intersection(edge, [wrong_point, next_point])
+        if col_next is not None:
+            break 
+    
+    if col_pre is not None:
+        landmark_pre = landmark.copy()
+        landmark_pre[num_wrong], landmark[num_wrong + 1] = col_pre
+        landmark_pre_poly = [(landmark_pre[i * 2], landmark_pre[i * 2 + 1]) for i in range(4)]
+        pgon_pre = Polygon(landmark_pre_poly).area 
+    else:
+        pgon_pre = -1
+        
+    if col_next is not None:
+        landmark_nx = landmark.copy()
+        landmark_nx[num_wrong], landmark[num_wrong + 1] = col_next
+        landmark_nx_poly = [(landmark_nx[i * 2], landmark_nx[i * 2 + 1]) for i in range(4)]
+        pgon_nx = Polygon(landmark_nx_poly).area 
+    else:
+        pgon_nx = -1
+
+    if pgon_nx == -1 and pgon_pre == -1:
+        print(landmark)
+        print(wrong_point)
+    else:
+        landmark = landmark_nx if pgon_nx > pgon_pre else landmark_pre
+    return landmark
+
+INT_MAX = 10000
+ 
+# Given three collinear points p, q, r, 
+# the function checks if point q lies
+# on line segment 'pr'
+def onSegment(p:tuple, q:tuple, r:tuple) -> bool:
+     
+    if ((q[0] <= max(p[0], r[0])) &
+        (q[0] >= min(p[0], r[0])) &
+        (q[1] <= max(p[1], r[1])) &
+        (q[1] >= min(p[1], r[1]))):
+        return True
+         
+    return False
+ 
+# To find orientation of ordered triplet (p, q, r).
+# The function returns following values
+# 0 --> p, q and r are collinear
+# 1 --> Clockwise
+# 2 --> Counterclockwise
+def orientation(p:tuple, q:tuple, r:tuple) -> int:
+     
+    val = (((q[1] - p[1]) *
+            (r[0] - q[0])) -
+           ((q[0] - p[0]) *
+            (r[1] - q[1])))
+            
+    if val == 0:
+        return 0
+    if val > 0:
+        return 1 # Collinear
+    else:
+        return 2 # Clock or counterclock
+ 
+def doIntersect(p1, q1, p2, q2):
+     
+    # Find the four orientations needed for 
+    # general and special cases
+    o1 = orientation(p1, q1, p2)
+    o2 = orientation(p1, q1, q2)
+    o3 = orientation(p2, q2, p1)
+    o4 = orientation(p2, q2, q1)
+ 
+    # General case
+    if (o1 != o2) and (o3 != o4):
+        return True
+     
+    # Special Cases
+    # p1, q1 and p2 are collinear and
+    # p2 lies on segment p1q1
+    if (o1 == 0) and (onSegment(p1, p2, q1)):
+        return True
+ 
+    # p1, q1 and p2 are collinear and
+    # q2 lies on segment p1q1
+    if (o2 == 0) and (onSegment(p1, q2, q1)):
+        return True
+ 
+    # p2, q2 and p1 are collinear and
+    # p1 lies on segment p2q2
+    if (o3 == 0) and (onSegment(p2, p1, q2)):
+        return True
+ 
+    # p2, q2 and q1 are collinear and
+    # q1 lies on segment p2q2
+    if (o4 == 0) and (onSegment(p2, q1, q2)):
+        return True
+ 
+    return False
+ 
+# Returns true if the point p lies 
+# inside the polygon[] with n vertices
+def isInside(points:list, p:tuple) -> bool:
+    points = [point[0] for point in points]
+    n = len(points)
+     
+    # There must be at least 3 vertices
+    # in polygon
+    if n < 3:
+        return False
+         
+    # Create a point for line segment
+    # from p to infinite
+    extreme = (INT_MAX, p[1])
+    count = i = 0
+     
+    while True:
+        next = (i + 1) % n
+         
+        # Check if the line segment from 'p' to 
+        # 'extreme' intersects with the line 
+        # segment from 'polygon[i]' to 'polygon[next]'
+        if (doIntersect(points[i],
+                        points[next],
+                        p, extreme)):
+                             
+            # If the point 'p' is collinear with line 
+            # segment 'i-next', then check if it lies 
+            # on segment. If it lies, return true, otherwise false
+            if orientation(points[i], p,
+                           points[next]) == 0:
+                return onSegment(points[i], p,
+                                 points[next])
+                                  
+            count += 1
+             
+        i = next
+         
+        if (i == 0):
+            break
+         
+    # Return true if count is odd, false otherwise
+    return (count % 2 == 1)
+
+
+def correct_landmark(landmarks, width, height, four_edges=[]):
+    # neu co tren 2 diem nam ngoai anh => tra ve rong 
+    # neu ko co diem nao sai => tra ve nhu cu 
+    # neu co diem nam ngoai, vi du A, 2 diem lien ke la B C, tim giao giua AB va canh anh, va AC va canh anh goi la 
+    # E F, neu thay the A thanh E hay F ma hinh tu giac co dien tich lon nhat thi ta chon diem do lam diem thay the 
+    # roi tra ve landmark da dc thay the
+    new_landmarks = []
+    four_edges = [[[0, 0], [width, 0]], [[width, 0], [width, height]], [[width, height], [0, height]], [[0, height], [0, 0]]]
+    # print(four_edges)
+    for landmark in landmarks:
+        landmark = landmark.tolist()
+        num_wrong = []
+        for i in range(4):
+            if not isInside(four_edges, [landmark[2 * i], landmark[2 * i + 1]]):
+                num_wrong.append(i)
+
+        # print(len(num_wrong))
+        # print(four_edges)
+        # print(landmark)
+        # print(num_wrong)
+        if len(num_wrong) == 0:
+            new_landmarks.append(landmark)
+            continue 
+
+        if len(num_wrong) == 1:
+            new_landmarks.append(correct_landmark_one_point(landmark, num_wrong[0], four_edges))
+
+        if len(num_wrong) == 2:
+            tmp_landmark = correct_landmark_one_point(landmark, num_wrong[0], four_edges)
+            new_landmarks.append(correct_landmark_one_point(tmp_landmark, num_wrong[1], four_edges))
+        
+        if len(num_wrong) >= 3:
+            new_landmarks.append(landmark)
+        # if len(num_wrong) == 3:
+        #     for i in range(4):
+        #         start = -1 
+        #         for num in num_wrong:
+        #             if i == num:
+        #                 start = i
+        #                 break
+        #         if start == -1:
+        #             start = i + 1
+        #             break
+        #     for i in range(3):
+        #         tmp_landmark = landmark
+        #         tmp_landmark = correct_landmark_one_point(tmp_landmark, (start + i) % 4, four_edges)
+        #     new_landmarks.append(tmp_landmark)
+
+        # if len(num_wrong) == 4:
+        #     new_landmarks.append([-1 for i in range(8)]) # let it auto correct
+
+    return new_landmarks
 
 def load_mosaic_face(self, index):
     # loads images in a mosaic
@@ -591,6 +913,33 @@ def letterbox(img, new_shape=(640, 640), color=(114, 114, 114), auto=True, scale
     img = cv2.copyMakeBorder(img, top, bottom, left, right, cv2.BORDER_CONSTANT, value=color)  # add border
     return img, ratio, (dw, dh)
 
+def get_box_from_landmark(landmarks, n, height, width):
+    x = landmarks[:, ::2] 
+    y = landmarks[:, 1::2]
+    xy = np.concatenate((x.min(1), y.min(1), x.max(1), y.max(1))).reshape(4, n).T
+    xy[:, [0, 2]] = xy[:, [0, 2]].clip(0, width)    
+    xy[:, [1, 3]] = xy[:, [1, 3]].clip(0, height)
+    return xy
+
+# so diem tra ve bi sai khi aug dan toi bi mat diem
+
+def save_poly(img, img_four_points):
+    img = img.copy()
+    isClosed = True
+    
+    # Blue color in BGR
+    color = (255, 0, 0)
+    
+    # Line thickness of 2 px
+    thickness = 2
+    pts = np.asarray(img_four_points, np.int32)
+    pts = pts.reshape((-1, 1, 2))
+    # Using cv2.polylines() method
+    # Draw a Blue polygon with 
+    # thickness of 1 px
+    img = cv2.polylines(img, [pts], 
+                        isClosed, color, thickness)
+    cv2.imwrite("test.jpg", img)
 
 def random_perspective(img, targets=(), degrees=10, translate=.1, scale=.1, shear=10, perspective=0.0, border=(0, 0)):
     # torchvision.transforms.RandomAffine(degrees=(-10, 10), translate=(.1, .1), scale=(.9, 1.1), shear=(-10, 10))
@@ -612,8 +961,12 @@ def random_perspective(img, targets=(), degrees=10, translate=.1, scale=.1, shea
     # Rotation and Scale
     R = np.eye(3)
     a = random.uniform(-degrees, degrees)
-    # a += random.choice([-180, -90, 0, 90])  # add 90deg rotations to small rotations
-    s = random.uniform(1 - scale, 1 + scale)
+    if random.random() < 0.2:
+        a += random.choice([90])  # add 90deg rotations to small rotations
+    if random.random() < 0.5:
+        s = random.uniform(1 - scale, 1)
+    else:
+        s = 1
     # s = 2 ** random.uniform(-scale, scale)
     R[:2] = cv2.getRotationMatrix2D(angle=a, center=(0, 0), scale=s)
 
@@ -622,27 +975,96 @@ def random_perspective(img, targets=(), degrees=10, translate=.1, scale=.1, shea
     S[0, 1] = math.tan(random.uniform(-shear, shear) * math.pi / 180)  # x shear (deg)
     S[1, 0] = math.tan(random.uniform(-shear, shear) * math.pi / 180)  # y shear (deg)
 
+    n = len(targets)
+    if n:
+        T_tmp = np.eye(3)
+        T_tmp[0, 2] = 0.5 * width  # x translation (pixels)
+        T_tmp[1, 2] = 0.5 * height
+        M_wo_T = T_tmp @ S @ R @ P @ C
+        xy = np.ones((n * 4, 3))
+        xy[:, :2] = targets[:, [5, 6, 7, 8, 9, 10, 11, 12]].reshape(n * 4, 2)  # x1y1, x2y2, x1y2, x2y1
+        xy = xy @ M_wo_T.T  #   transform
+        # print(xy[:, 2:3])
+        if perspective:
+            xy = (xy[:, :2] / xy[:, 2:3]).reshape(n, 4, 2)  # rescale
+        else:
+            xy = xy[:, :2].reshape(n, 4, 2)
+        # print("checkkkkkkkkkkk")
+        # print(xy)
+        x_min = max(-xy[:, :, 0].min(), 0)
+        y_min = max(-xy[:, :, 1].min(), 0) 
+        x_max = max(xy[:, :, 0].max() - width + 1, 0)
+        y_max = max(xy[:, :, 1].max() - height + 1, 0) 
+        # print(x_min, y_min, x_max, y_max) 
+        # T = np.eye(3)
+        # T[0, 2] = int(0.5 * width + 0.5 * (x_max - x_min))  # x translation (pixels)
+        # T[1, 2] = int(0.5 * height + 0.5 * (y_max - y_min)) 
+        # new_width = int(width + (x_max + x_min)+ 0.0 * random.random() * width)
+        # new_height = int(height + (y_max + y_min) + 0.0 * random.random() * height)
+        new_height = height 
+        new_width = width
+        # if x_min != 0 or x_max != 0:
+        #     new_width += 1
+        # if y_min != 0 or y_max != 0:
+        #     new_height += 1
+        # R[:2] = cv2.getRotationMatrix2D(angle=a, center=(0, 0), scale=s * max(new_width / width, new_height / height))
+        # C[0, 2] = -img.shape[1] / 2  + int(0.5 * (x_max - x_min))# x translation (pixels)
+        # C[1, 2] = -img.shape[0] / 2  + int(0.5 * (y_max - y_min))# y translation (pixels)
+        # C[0, 0] = width / int(width + (x_max + x_min))
+        # C[1, 1] = height / int(height + (y_max + y_min))
+    else:
+        new_height = height 
+        new_width = width
+
+
     # Translation
+    # T = np.eye(3)
+    # T[0, 2] = random.uniform(0.5 - translate, 0.5 + translate) * width  # x translation (pixels)
+    # T[1, 2] = random.uniform(0.5 - translate, 0.5 + translate) * height  # y translation (pixels)
+
     T = np.eye(3)
-    T[0, 2] = random.uniform(0.5 - translate, 0.5 + translate) * width  # x translation (pixels)
-    T[1, 2] = random.uniform(0.5 - translate, 0.5 + translate) * height  # y translation (pixels)
+    T[0, 2] = 0.5 * width  # x translation (pixels)
+    T[1, 2] = 0.5 * height 
 
     # Combined rotation matrix
     M = T @ S @ R @ P @ C  # order of operations (right to left) is IMPORTANT
+
+    C = np.eye(3)
+    C[0, 2] += x_min # x translation (pixels)
+    C[1, 2] += y_min # y translation (pixels)
+    C[0, 0] = width / (width + (x_max + x_min*2))
+    C[1, 1] = height / (height + (y_max + y_min*2))
+    M = C @ M
+    # new_height = int(width + (x_max + x_min)) 
+    # new_width = int(height + (y_max + y_min))
+
     if (border[0] != 0) or (border[1] != 0) or (M != np.eye(3)).any():  # image changed
         if perspective:
-            img = cv2.warpPerspective(img, M, dsize=(width, height), borderValue=(114, 114, 114))
+            img = cv2.warpPerspective(img, M, dsize=(new_width, new_height), borderValue=(114, 114, 114))
         else:  # affine
-            img = cv2.warpAffine(img, M[:2], dsize=(width, height), borderValue=(114, 114, 114))
+            img = cv2.warpAffine(img, M[:2], dsize=(new_width, new_height), borderValue=(114, 114, 114))
+        img = cv2.resize(img, (width, height))
 
     # Visualize
     # import matplotlib.pyplot as plt
     # ax = plt.subplots(1, 2, figsize=(12, 6))[1].ravel()
     # ax[0].imshow(img[:, :, ::-1])  # base
+
     # ax[1].imshow(img2[:, :, ::-1])  # warped
 
     # Transform label coordinates
-    n = len(targets)
+    img_four_points = np.asarray([[0, 0], [width, 0], [width, height], [0, height]])
+    img_four_points = np.hstack((img_four_points, np.ones((4, 1))))
+    img_four_points = img_four_points @ M.T
+    if perspective:
+        img_four_points = (img_four_points[:, :2] / img_four_points[:, 2:3])  # rescale
+    else:  # affine
+        img_four_points = img_four_points[:, :2]
+    
+    four_edges_new = np.hstack((img_four_points, np.vstack((img_four_points[1:], img_four_points[0])))).reshape(4, 2, 2).tolist()
+
+    # save_poly(img, img_four_points) # for test
+
     if n:
         # warp points
         #xy = np.ones((n * 4, 3))
@@ -654,15 +1076,27 @@ def random_perspective(img, targets=(), degrees=10, translate=.1, scale=.1, shea
         else:  # affine
             xy = xy[:, :2].reshape(n, 16)
 
+        xy = (xy.reshape(n, 8, 2) * np.asarray([width / new_width, height / new_height])).reshape(n, 16)
         # create new boxes
         x = xy[:, [0, 2, 4, 6]]
         y = xy[:, [1, 3, 5, 7]]
 
         landmarks = xy[:, [8, 9, 10, 11, 12, 13, 14, 15]]
-        mask = np.array(targets[:, 5:] > 0, dtype=np.int32)
-        landmarks = landmarks * mask
-        landmarks = landmarks + mask - 1
+        # mask = np.array(targets[:, 5:] > 0, dtype=np.int32)
+        # landmarks = landmarks * mask
+        # landmarks = landmarks + mask * (mask - 1)
+        # print(width, height)
+        # print(new_width, new_height)
+        # print(landmarks)
 
+        # landmarks = np.asarray(correct_landmark(landmarks, width, height, four_edges_new))
+
+        # landmarks = np.where(landmarks < 0, 0, landmarks)
+        # landmarks[:, [0, 2, 4, 6]] = np.where(landmarks[:, [0, 2, 4, 6]] >= width, width - 1, landmarks[:, [0, 2, 4, 6]])
+        # landmarks[:, [1, 3, 5, 7]] = np.where(landmarks[:, [1, 3, 5, 7]] >= height, height - 1,landmarks[:, [1, 3, 5, 7]])        
+
+        # old 
+        '''
         landmarks = np.where(landmarks < 0, -1, landmarks)
         landmarks[:, [0, 2, 4, 6]] = np.where(landmarks[:, [0, 2, 4, 6]] > width, -1, landmarks[:, [0, 2, 4, 6]])
         landmarks[:, [1, 3, 5, 7]] = np.where(landmarks[:, [1, 3, 5, 7]] > height, -1,landmarks[:, [1, 3, 5, 7]])
@@ -679,8 +1113,9 @@ def random_perspective(img, targets=(), degrees=10, translate=.1, scale=.1, shea
         landmarks[:, 6] = np.where(landmarks[:, 7] == -1, -1, landmarks[:, 6])
         landmarks[:, 7] = np.where(landmarks[:, 6] == -1, -1, landmarks[:, 7])
 
-        # landmarks[:, 8] = np.where(landmarks[:, 9] == -1, -1, landmarks[:, 8])
-        # landmarks[:, 9] = np.where(landmarks[:, 8] == -1, -1, landmarks[:, 9])
+        landmarks[:, 8] = np.where(landmarks[:, 9] == -1, -1, landmarks[:, 8])
+        landmarks[:, 9] = np.where(landmarks[:, 8] == -1, -1, landmarks[:, 9])
+        '''
 
         targets[:,5:] = landmarks
 
@@ -700,19 +1135,24 @@ def random_perspective(img, targets=(), degrees=10, translate=.1, scale=.1, shea
         xy[:, [1, 3]] = xy[:, [1, 3]].clip(0, height)
 
         # filter candidates
-        i = box_candidates(box1=targets[:, 1:5].T * s, box2=xy.T)
+        box_from_lm = get_box_from_landmark(landmarks, n, height, width)
+
+        i = box_candidates(box1=targets[:, 1:5].T * s, box2=xy.T, box_from_lm=box_from_lm.T)
+        
         targets = targets[i]
-        targets[:, 1:5] = xy[i]
+        targets[:, 1:5] = box_from_lm[i]
 
     return img, targets
 
 
-def box_candidates(box1, box2, wh_thr=2, ar_thr=20, area_thr=0.1):  # box1(4,n), box2(4,n)
+def box_candidates(box1, box2, box_from_lm, wh_thr=2, ar_thr=20, area_thr=0.1):  # box1(4,n), box2(4,n)
     # Compute candidate boxes: box1 before augment, box2 after augment, wh_thr (pixels), aspect_ratio_thr, area_ratio
     w1, h1 = box1[2] - box1[0], box1[3] - box1[1]
-    w2, h2 = box2[2] - box2[0], box2[3] - box2[1]
+    # w2, h2 = box2[2] - box2[0], box2[3] - box2[1]
+    w2, h2 = box_from_lm[2] - box_from_lm[0], box_from_lm[3] - box_from_lm[1]
+    
     ar = np.maximum(w2 / (h2 + 1e-16), h2 / (w2 + 1e-16))  # aspect ratio
-    return (w2 > wh_thr) & (h2 > wh_thr) & (w2 * h2 / (w1 * h1 + 1e-16) > area_thr) & (ar < ar_thr)  # candidates
+    return (w2 > wh_thr) & (h2 > wh_thr) & (ar < ar_thr)  # candidates
 
 
 def cutout(image, labels):
@@ -828,3 +1268,4 @@ def autosplit(path='../coco128', weights=(0.9, 0.1, 0.0)):  # from utils.dataset
             with open(path / txt[i], 'a') as f:
                 f.write(str(img) + '\n')  # add image to txt file
 
+# CUDA_VISIBLE_DEVICES="" python train.py --data data/card.yaml --cfg models/yolov5s.yaml --img-size 128 128 --batch-size 64 --epochs 80 --weights yolov5s-face.pt

@@ -5,3 +5,7 @@ runs/*
 *.zip
 __pycache__/
 *.py[cod]
+*.pt
+CardDetectionOnly_v1*
+best*
+*.onnx

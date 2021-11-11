@@ -8,7 +8,7 @@ import torch
 import torch.backends.cudnn as cudnn
 from numpy import random
 import copy
-
+import os
 from models.experimental import attempt_load
 from utils.datasets import letterbox
 from utils.general import check_img_size, non_max_suppression_face, apply_classifier, scale_coords, xyxy2xywh, \
@@ -70,10 +70,11 @@ def show_results(img, xywh, conf, landmarks, class_num):
 
 
 
-def detect_one(model, image_path, device):
+def detect_one(model, image_path, device, img_size=224, save_dir="./"):
     # Load model
-    img_size = 256
-    conf_thres = 0.3
+    if not os.path.isdir(save_dir) and not os.path.isfile(save_dir):
+        os.mkdir(save_dir)
+    conf_thres = 0.05
     iou_thres = 0.5
 
     orgimg = cv2.imread(image_path)  # BGR
@@ -87,7 +88,7 @@ def detect_one(model, image_path, device):
 
     imgsz = check_img_size(img_size, s=model.stride.max())  # check img_size
 
-    img = letterbox(img0, new_shape=imgsz)[0]
+    img = letterbox(img0, new_shape=imgsz, scaleFill=True)[0]
     # Convert
     img = img[:, :, ::-1].transpose(2, 0, 1).copy()  # BGR to RGB, to 3x416x416
 
@@ -104,7 +105,7 @@ def detect_one(model, image_path, device):
     t1 = time_synchronized()
     pred = model(img)[0]
     print("time=== ", time_synchronized() - t1)
-
+    print(pred)
 
     # Apply NMS
     pred = non_max_suppression_face(pred, conf_thres, iou_thres)
@@ -133,7 +134,7 @@ def detect_one(model, image_path, device):
                 class_num = det[j, 13].cpu().numpy()
                 orgimg = show_results(orgimg, xywh, conf, landmarks, class_num)
 
-    cv2.imwrite('result.jpg', orgimg)
+    cv2.imwrite(os.path.join(save_dir, os.path.basename(image_path)), orgimg)
 
 
 
@@ -142,9 +143,18 @@ if __name__ == '__main__':
     parser = argparse.ArgumentParser()
     parser.add_argument('--weights', nargs='+', type=str, default='runs/train/exp5/weights/last.pt', help='model.pt path(s)')
     parser.add_argument('--image', type=str, default='data/images/test.jpg', help='source')  # file/folder, 0 for webcam
-    parser.add_argument('--img-size', type=int, default=640, help='inference size (pixels)')
+    parser.add_argument('--save-dir', type=str, default='./', help='source')  # file/folder, 0 for webcam
+
+    parser.add_argument('--img-size', type=int, default=224, help='inference size (pixels)')
     opt = parser.parse_args()
     print(opt)
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
     model = load_model(opt.weights, device)
-    detect_one(model, opt.image, device)
+    if os.path.isdir(opt.image):
+        for img in os.listdir(opt.image):
+            if img.endswith(".jpg") or img.endswith(".jpeg") or img.endswith(".png") or img.endswith(".JPEG"):
+                detect_one(model, os.path.join(opt.image, img), device, opt.img_size, opt.save_dir)
+    else:
+        detect_one(model, opt.image, device, opt.img_size, opt.save_dir)
+
+# CUDA_VISIBLE_DEVICES="" python detect_face.py --weights runs/train/exp265/weights/71.pt --image /home/quannd/CardDetection/KeyPointDetection/yolov5-face/download3.png --img-size 256 --save-dir ../

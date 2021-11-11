@@ -17,11 +17,13 @@ from utils.loss import compute_loss
 from utils.metrics import ap_per_class, ConfusionMatrix
 from utils.plots import plot_images, output_to_target, plot_study_txt
 from utils.torch_utils import select_device, time_synchronized
+from utils.face_datasets import correct_landmark
+
 
 def get_mse_between_2box(targets, outputs):
     return torch.mean((targets - outputs) ** 2)
 def get_mse(output, targets, width, height):
-    print(output.shape)
+    # print(output.shape)
     output = output.clone().cpu()
     arg_max = torch.argmax(output[:, :, 4], dim=1).reshape(output.size()[0])
     res = torch.zeros((output.size()[0], output.size()[2]))
@@ -29,6 +31,8 @@ def get_mse(output, targets, width, height):
         res[i] = output[i, arg_max[i], :]
     output = res
     targets = targets.clone().cpu()
+    lm = correct_landmark(output[:, 5:13], width, height)
+    output[:, 5:13] = torch.from_numpy(np.asarray(lm))
     output[:, 5:13] /= torch.Tensor([width, height, width, height, width, height, width, height]).cpu()
     return get_mse_between_2box(targets[:, 6:14], output[:, 5:13])
 
@@ -53,6 +57,8 @@ def test(data,
          log_imgs=0):  # number of logged images
 
     # Initialize/load model and set device
+    is_contain_landmark = True
+
     training = model is not None
     if training:  # called by train.py
         device = next(model.parameters()).device  # get model device
@@ -110,6 +116,7 @@ def test(data,
     p, r, f1, mp, mr, map50, map, t0, t1 = 0., 0., 0., 0., 0., 0., 0., 0., 0.
     loss = torch.zeros(3, device=device)
     jdict, stats, ap, ap_class, wandb_images = [], [], [], [], []
+    mses = []
     for batch_i, (img, targets, paths, shapes) in enumerate(tqdm(dataloader, desc=s)):
         img = img.to(device, non_blocking=True)
         img = img.half() if half else img.float()  # uint8 to fp16/32
@@ -121,12 +128,22 @@ def test(data,
             # Run model
             t = time_synchronized()
             inf_out, train_out = model(img, augment=augment)  # inference and training outputs
+            if not is_contain_landmark:
+                inf_out = torch.cat((inf_out[:, :, :5], torch.zeros((inf_out.shape[0], inf_out.shape[1], 8)).to(device), inf_out[:, :, -1:]), 2)
+                mse = 0
+            else: 
+                mse = get_mse(inf_out, targets, width, height)
+            # for p in train_out:
+            #     print(p.shape)
             t0 += time_synchronized() - t
-            mse = get_mse(inf_out, targets, width, height)
-            print(mse)
+            # 
+            mses.append(mse)
             # Compute loss
             if training:
-                loss += compute_loss([x.float() for x in train_out], targets, model)[1][:3]  # box, obj, cls
+                if not is_contain_landmark:
+                    loss += compute_loss([torch.cat((x[:, :, :, :, :5], torch.zeros((x.shape[0], x.shape[1], x.shape[2], x.shape[3], 8)).to(device), x[:, :, :, :, -1:]), 4).float() for x in train_out], targets, model, is_contain_landmark=True)[1][:3]  # box, obj, cls
+                else: 
+                    loss += compute_loss([x.float() for x in train_out], targets, model)[1][:3]
 
             # Run NMS
             targets[:, 2:6] *= torch.Tensor([width, height, width, height]).to(device)  # to pixels
@@ -138,7 +155,9 @@ def test(data,
 
         # Statistics per image
         for si, pred in enumerate(output):
-            pred = torch.cat((pred[:, :5], pred[:, 13:]), 1) # throw landmark in thresh
+            pred = torch.cat((pred[:, :5], pred[:, -1:]), 1) # throw landmark in thresh
+            # pred = pred[:, :6] # throw landmark in thresh
+
             labels = targets[targets[:, 0] == si, 1:]
             nl = len(labels)
             tcls = labels[:, 0].tolist() if nl else []  # target class
@@ -241,7 +260,10 @@ def test(data,
     # Print results
     pf = '%20s' + '%12.3g' * 6  # print format
     print(pf % ('all', seen, nt.sum(), mp, mr, map50, map))
-
+    s = 0 
+    for mse in mses:
+      s += mse 
+    print("MSE ============= ", s / len(mses))
     # Print results per class
     if verbose and nc > 1 and len(stats):
         for i, c in enumerate(ap_class):

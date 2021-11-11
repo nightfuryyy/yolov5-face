@@ -10,7 +10,7 @@ import tensorflow as tf
 import time 
 tf.config.experimental.enable_tensor_float_32_execution(False)
 
-from save_model_ultils import anchor_process, show_results, letterbox, non_max_suppression_face, scale_coords, xyxy2xywh
+from save_model_ultils import anchor_process, show_results, letterbox, non_max_suppression_face, scale_coords, xyxy2xywh, convert_result
 
 class Model: 
     def __init__(self, model_path, anchors=[], output_names=[]):
@@ -41,7 +41,8 @@ class Model:
                 xywh, conf = box[0], box[1]
                 image = show_results(image, xywh, conf)
             cv2.imwrite(save_path, image)
-        return result
+
+        return convert_result(result, image.shape) 
         
 
     def preprocess_scrath(self, orgi_image, img_size=256):

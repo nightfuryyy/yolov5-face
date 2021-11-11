@@ -6,6 +6,22 @@ import torchvision
 def sigmoid(z):
     return 1/(1 + np.exp(-z))
 
+def convert_result(result, img_shape):
+    h, w, c = img_shape
+    new_res = []
+    if len(result) != 0: 
+        for box in result:
+            xywh, conf = box[0], box[1]
+            xyxy = []
+            xyxy.append(int((xywh[0] * w - 0.5 * xywh[2] * w)))
+            xyxy.append(int((xywh[1] * h - 0.5 * xywh[3] * h)))
+            xyxy.append(int((xywh[0] * w + 0.5 * xywh[2] * w)))
+            xyxy.append(int((xywh[1] * h + 0.5 * xywh[3] * h)))
+            box = [xyxy, conf]
+            new_res.append(box)
+    return new_res
+
+
 def xywh2xyxy(x):
     # Convert nx4 boxes from [x, y, w, h] to [x1, y1, x2, y2] where xy1=top-left, xy2=bottom-right
     y = np.copy(x)

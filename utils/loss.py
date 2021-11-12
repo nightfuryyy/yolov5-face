@@ -139,6 +139,7 @@ def compute_loss(p, targets, model, is_contain_landmark=True):  # predictions, t
     nt = 0  # number of targets
     no = len(p)  # number of outputs
     balance = [0.05, 0.225, 0.225] if no == 3 else [4.0, 1.0, 0.4, 0.1]  # P3-5 or P3-6
+    balance_lm = [0.1, 1.0, 1.0]
     for i, pi in enumerate(p):  # layer index, layer predictions
         b, a, gj, gi = indices[i]  # image, anchor, gridy, gridx
         tobj = torch.zeros_like(pi[..., 0], device=device)  # target obj
@@ -170,7 +171,7 @@ def compute_loss(p, targets, model, is_contain_landmark=True):  # predictions, t
             #landmarks loss
             #plandmarks = ps[:,5:15].sigmoid() * 8. - 4.
             if is_contain_landmark:
-                plandmarks = ps[:,5:13]
+                plandmarks = ps[:,5:13].sigmoid() * 8. - 4.
 
                 plandmarks[:, 0:2] = plandmarks[:, 0:2] * anchors[i]
                 plandmarks[:, 2:4] = plandmarks[:, 2:4] * anchors[i]
@@ -178,7 +179,7 @@ def compute_loss(p, targets, model, is_contain_landmark=True):  # predictions, t
                 plandmarks[:, 6:8] = plandmarks[:, 6:8] * anchors[i]
                 # plandmarks[:, 8:10] = plandmarks[:,8:10] * anchors[i]
 
-                lmark += landmarks_loss(plandmarks, tlandmarks[i], lmks_mask[i])
+                lmark += landmarks_loss(plandmarks, tlandmarks[i], lmks_mask[i]) * balance_lm[i]
 
 
         lobj += BCEobj(pi[..., 4], tobj) * balance[i]  # obj loss

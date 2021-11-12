@@ -141,9 +141,9 @@ def test(data,
             # Compute loss
             if training:
                 if not is_contain_landmark:
-                    loss += compute_loss([torch.cat((x[:, :, :, :, :5], torch.zeros((x.shape[0], x.shape[1], x.shape[2], x.shape[3], 8)).to(device), x[:, :, :, :, -1:]), 4).float() for x in train_out], targets, model, is_contain_landmark=True)[1][:3]  # box, obj, cls
+                    loss += compute_loss([torch.cat((x[:, :, :, :, :5], torch.zeros((x.shape[0], x.shape[1], x.shape[2], x.shape[3], 8)).to(device), x[:, :, :, :, -1:]), 4).float() for x in train_out], targets, model, is_contain_landmark=is_contain_landmark)[1][:3]  # box, obj, cls
                 else: 
-                    loss += compute_loss([x.float() for x in train_out], targets, model)[1][:3]
+                    loss += compute_loss([x.float() for x in train_out], targets, model, is_contain_landmark=is_contain_landmark)[1][:3]
 
             # Run NMS
             targets[:, 2:6] *= torch.Tensor([width, height, width, height]).to(device)  # to pixels

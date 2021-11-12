@@ -367,7 +367,7 @@ class LoadFaceImagesAndLabels(Dataset):  # for training/testing
                     labels[:, 2] = 1 - labels[:, 2]
 
                     labels[:, [6, 8, 10, 12]] = 1 - labels[:, [6, 8, 10, 12]]
-                    
+                    labels[:, [5, 6, 7, 8, 9, 10, 11, 12]] = labels[:, [11, 12, 9, 10, 7, 8, 5, 6]]
                     # labels[:, 6] = np.where(labels[:,6] < 0, -1, 1 - labels[:, 6])
                     # labels[:, 8] = np.where(labels[:, 8] < 0, -1, 1 - labels[:, 8])
                     # labels[:, 10] = np.where(labels[:, 10] < 0, -1, 1 - labels[:, 10])
@@ -380,15 +380,21 @@ class LoadFaceImagesAndLabels(Dataset):  # for training/testing
                 img = np.fliplr(img)
                 if nL:
                     labels[:, 1] = 1 - labels[:, 1]
-
+                    # 1 2 3 4 = > 4 3 2 1
                     labels[:, [5, 7, 9, 11]] = 1 - labels[:, [5, 7, 9, 11]]
-
+                    labels[:, [5, 6, 7, 8, 9, 10, 11, 12]] = labels[:, [7, 8, 5, 6, 11, 12, 9, 10]]
                     # labels[:, 5] = np.where(labels[:, 5] < 0, -1, 1 - labels[:, 5])
                     # labels[:, 7] = np.where(labels[:, 7] < 0, -1, 1 - labels[:, 7])
                     # labels[:, 9] = np.where(labels[:, 9] < 0, -1, 1 - labels[:, 9])
                     # labels[:, 11] = np.where(labels[:, 11] < 0, -1, 1 - labels[:, 11])
 
                     # labels[:, 13] = np.where(labels[:, 13] < 0, -1, 1 - labels[:, 13])
+            if random.random() < 0.2: #rotate 90
+                img = img.swapaxes(-3, -2)[...,::-1,:]
+                if nL:
+                    labels[:, [1, 2]] = labels[:, [2, 1]]
+                    # 1 2 3 4 = > 4 3 2 1
+                    labels[:, [1, 2, 5, 6, 7, 8, 9, 10, 11, 12]] = labels[:, [2, 1, 12, 11, 6, 5, 8, 7, 10, 9]]
 
         labels_out = torch.zeros((nL, 14))
         if nL:
@@ -834,6 +840,7 @@ def load_image(self, index):
     img = self.imgs[index]
     if img is None:  # not cached
         path = self.img_files[index]
+        path = "../" + "/".join(path.split("/")[-3:])
         img = cv2.imread(path)  # BGR
         assert img is not None, 'Image Not Found ' + path
         h0, w0 = img.shape[:2]  # orig hw
@@ -961,8 +968,8 @@ def random_perspective(img, targets=(), degrees=10, translate=.1, scale=.1, shea
     # Rotation and Scale
     R = np.eye(3)
     a = random.uniform(-degrees, degrees)
-    if random.random() < 0.2:
-        a += random.choice([90])  # add 90deg rotations to small rotations
+    # if random.random() < 0.2:
+    #     a += random.choice([90])  # add 90deg rotations to small rotations
     if random.random() < 0.5:
         s = random.uniform(1 - scale, 1)
     else:

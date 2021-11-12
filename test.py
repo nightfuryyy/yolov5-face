@@ -19,8 +19,22 @@ from utils.plots import plot_images, output_to_target, plot_study_txt
 from utils.torch_utils import select_device, time_synchronized
 from utils.face_datasets import correct_landmark
 
+def order_points(pts):
+	rect = np.zeros((4, 2), dtype = "float32")
+	s = pts.sum(axis = 1)
+	rect[0] = pts[np.argmin(s)]
+	rect[2] = pts[np.argmax(s)]
+	diff = np.diff(pts, axis = 1)
+	rect[1] = pts[np.argmin(diff)]
+	rect[3] = pts[np.argmax(diff)]
+	return rect
 
 def get_mse_between_2box(targets, outputs):
+    tmp_outputs = outputs.reshape((-1, 4, 2))
+    new_outputs = []
+    for tmp_output in tmp_outputs:
+      new_outputs.append(order_points(tmp_output))
+    new_outputs = np.asarray(new_outputs).clip(0, 1.0)
     return torch.mean((targets - outputs) ** 2)
 def get_mse(output, targets, width, height):
     # print(output.shape)

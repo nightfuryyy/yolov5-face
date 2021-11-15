@@ -35,10 +35,21 @@ def get_mse_between_2box(targets, outputs):
     for tmp_output in tmp_outputs:
       new_outputs.append(order_points(tmp_output))
     new_outputs = np.asarray(new_outputs).clip(0, 1.0)
-    return torch.mean((targets - outputs) ** 2)
-def get_mse(output, targets, width, height):
+    return torch.mean(torch.abs(targets - outputs))
+def get_mse(output, targets, width, height, paths):
     # print(output.shape)
+    check = -1 
+    blacklist_paths = ["passport_343bcfd2c226804836c44fc474a79ac5.jpg"]
+    for i, path in enumerate(paths):
+        for blacklist_path in blacklist_paths:
+            if blacklist_path in path.split("/")[-1]:
+                # print(blacklist_path)
+                check = i
     output = output.clone().cpu()
+    targets = targets.clone()
+    if check != -1:
+        output = torch.cat((output[:check], output[check + 1:]), axis = 0)
+        targets = torch.cat((targets[:check], targets[check + 1:]), axis = 0)
     arg_max = torch.argmax(output[:, :, 4], dim=1).reshape(output.size()[0])
     res = torch.zeros((output.size()[0], output.size()[2]))
     for i in range(output.size()[0]):
@@ -146,7 +157,7 @@ def test(data,
                 inf_out = torch.cat((inf_out[:, :, :5], torch.zeros((inf_out.shape[0], inf_out.shape[1], 8)).to(device), inf_out[:, :, -1:]), 2)
                 mse = 0
             else: 
-                mse = get_mse(inf_out, targets, width, height)
+                mse = get_mse(inf_out, targets, width, height, paths)
             # for p in train_out:
             #     print(p.shape)
             t0 += time_synchronized() - t
@@ -192,7 +203,7 @@ def test(data,
                 gn = torch.tensor(shapes[si][0])[[1, 0, 1, 0]]  # normalization gain whwh
                 for *xyxy, conf, cls in predn.tolist():
                     xywh = (xyxy2xywh(torch.tensor(xyxy).view(1, 4)) / gn).view(-1).tolist()  # normalized xywh
-                    line = (cls, *xywh, conf) if save_conf else (cls, *xywh)  # label format
+                    line = (cls, *xywh, conf, float(s / len(mses))) if save_conf else (cls, *xywh)  # label format
                     with open(save_dir / 'labels' / (path.stem + '.txt'), 'a') as f:
                         f.write(('%g ' * len(line)).rstrip() % line + '\n')
 

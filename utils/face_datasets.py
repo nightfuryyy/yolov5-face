@@ -20,6 +20,7 @@ from tqdm import tqdm
 from utils.general import xyxy2xywh, xywh2xyxy, clean_str
 from utils.torch_utils import torch_distributed_zero_first
 
+# bfb85e7 33_3 2031421_back 202104061205 202104141425 202104160925 202108041723 202108091851 2047867 343bcfd2c 
 
 # Parameters
 help_url = 'https://github.com/ultralytics/yolov5/wiki/Train-Custom-Data'
@@ -389,13 +390,13 @@ class LoadFaceImagesAndLabels(Dataset):  # for training/testing
                     # labels[:, 11] = np.where(labels[:, 11] < 0, -1, 1 - labels[:, 11])
 
                     # labels[:, 13] = np.where(labels[:, 13] < 0, -1, 1 - labels[:, 13])
-            if random.random() < 0.2: #rotate 90
+            if random.random() < 0.4: #rotate 90
                 img = img.swapaxes(-3, -2)[...,::-1,:]
                 if nL:
-                    labels[:, [1, 2]] = labels[:, [2, 1]]
                     # 1 2 3 4 = > 4 3 2 1
-                    labels[:, [1, 2, 5, 6, 7, 8, 9, 10, 11, 12]] = labels[:, [2, 1, 12, 11, 6, 5, 8, 7, 10, 9]]
-
+                    labels[:, [1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12]] = labels[:, [2, 1, 4, 3, 12, 11, 6, 5, 8, 7, 10, 9]]
+                    labels[:, [1, 5, 7, 9, 11]] = 1 - labels[:, [1, 5, 7, 9, 11]]
+ 
         labels_out = torch.zeros((nL, 14))
         if nL:
             labels_out[:, 1:] = torch.from_numpy(labels)
@@ -483,6 +484,7 @@ def get_augmentations():
 
 def showlabels(img, boxs, landmarks, path):
     img = img.copy()
+    ori = img.copy()
     for box in boxs:
         x,y,w,h = box[0] * img.shape[1], box[1] * img.shape[0], box[2] * img.shape[1], box[3] * img.shape[0]
         #cv2.rectangle(image, (x,y), (x+w,y+h), (0,255,0), 2)
@@ -499,7 +501,12 @@ def showlabels(img, boxs, landmarks, path):
             cv2.circle(img, (int(landmark[2*i] * img.shape[1]), int(landmark[2*i+1]*img.shape[0])), 3 ,(0,0,255), -1)
     path = path.replace("/", "_")
     # print(path)
-    cv2.imwrite("test_image/" + path + str(random.randint(0, 1000)) + "test.jpg", img)
+    cv2.imwrite("test_image/" + path + "test.jpg", img)
+    cv2.imwrite("test_image/" + path + "testori.jpg", ori)
+    print("==========")
+    print("test_image/" + path + "testori.jpg")
+    print(boxs)
+    print(landmarks)
     # cv2.imshow('test', img)
     # cv2.waitKey(0)
 
@@ -840,7 +847,8 @@ def load_image(self, index):
     img = self.imgs[index]
     if img is None:  # not cached
         path = self.img_files[index]
-        path = "../" + "/".join(path.split("/")[-3:])
+        # print(path)
+        path = "../../../" + "/".join(path.split("/")[-3:])
         img = cv2.imread(path)  # BGR
         assert img is not None, 'Image Not Found ' + path
         h0, w0 = img.shape[:2]  # orig hw

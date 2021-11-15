@@ -105,13 +105,10 @@ def detect_one(model, image_path, device, img_size=224, save_dir="./"):
     t1 = time_synchronized()
     pred = model(img)[0]
     print("time=== ", time_synchronized() - t1)
-    print(pred)
+    # print(pred)
 
     # Apply NMS
     pred = non_max_suppression_face(pred, conf_thres, iou_thres)
-    print(pred)
-    print('img.shape: ', img.shape)
-    print('orgimg.shape: ', orgimg.shape)
 
     # Process detections
     for i, det in enumerate(pred):  # detections per image

@@ -384,7 +384,6 @@ def non_max_suppression_face(prediction, conf_thres=0.25, iou_thres=0.45, classe
 
     nc = prediction.shape[2] - 15  # number of classes
     xc = prediction[..., 4] > conf_thres  # candidates
-
     # Settings
     min_wh, max_wh = 2, 4096  # (pixels) minimum and maximum box width and height
     time_limit = 10.0  # seconds to quit after

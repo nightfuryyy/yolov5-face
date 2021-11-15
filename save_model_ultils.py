@@ -4,6 +4,7 @@ import numpy as np
 import time  
 import torchvision
 def sigmoid(z):
+    z = np.clip(z, -88.72, 88.72)
     return 1/(1 + np.exp(-z))
 
 def convert_result(result, img_shape):
@@ -57,6 +58,29 @@ def box_iou(box1, box2):
     # iou = inter / (area1 + area2 - inter)
     return inter / (area1[:, None] + area2 - inter)
 
+def scale_coords_landmarks(img1_shape, coords, img0_shape, ratio_pad=None):
+    # Rescale coords (xyxy) from img1_shape to img0_shape
+    if ratio_pad is None:  # calculate from img0_shape
+        gain = min(img1_shape[0] / img0_shape[0], img1_shape[1] / img0_shape[1])  # gain  = old / new
+        pad = (img1_shape[1] - img0_shape[1] * gain) / 2, (img1_shape[0] - img0_shape[0] * gain) / 2  # wh padding
+    else:
+        gain = ratio_pad[0][0]
+        pad = ratio_pad[1]
+
+    coords[:, [0, 2, 4, 6]] -= pad[0]  # x padding
+    coords[:, [1, 3, 5, 7]] -= pad[1]  # y padding
+    coords[:, :10] /= gain
+    #clip_coords(coords, img0_shape)
+    coords[:, 0] = np.clip(coords[:, 0], 0, img0_shape[1])
+    coords[:, 1] = np.clip(coords[:, 1], 0, img0_shape[0])
+    coords[:, 2] = np.clip(coords[:, 2], 0, img0_shape[1])
+    coords[:, 3] = np.clip(coords[:, 3], 0, img0_shape[0])
+    coords[:, 4] = np.clip(coords[:, 4], 0, img0_shape[1])
+    coords[:, 5] = np.clip(coords[:, 5], 0, img0_shape[0])
+    coords[:, 6] = np.clip(coords[:, 6], 0, img0_shape[1])
+    coords[:, 7] = np.clip(coords[:, 7], 0, img0_shape[0])
+    return coords
+
 def non_max_suppression_face(prediction, conf_thres=0.25, iou_thres=0.45, classes=None, agnostic=False, labels=()):
     """Performs Non-Maximum Suppression (NMS) on inference results
     Returns:
@@ -72,9 +96,18 @@ def non_max_suppression_face(prediction, conf_thres=0.25, iou_thres=0.45, classe
     redundant = True  # require redundant detections
     multi_label = nc > 1  # multiple labels per box (adds 0.5ms/img)
     merge = False  # use merge-NMS
-
+    if prediction[0].shape[1] > 6:
+        is_contain_landmark = True  
+    else:
+        is_contain_landmark = False
+    
+    
     t = time.time()
-    output = [np.zeros((0, 6))] * prediction.shape[0]
+    if is_contain_landmark:
+        output = [np.zeros((0, 14))] * prediction.shape[0]
+    else: 
+        output = [np.zeros((0, 6))] * prediction.shape[0]
+
     for xi, x in enumerate(prediction):  # image index, image inference
         # Apply constraints
         # x[((x[..., 2:4] < min_wh) | (x[..., 2:4] > max_wh)).any(1), 4] = 0  # width-height
@@ -84,12 +117,16 @@ def non_max_suppression_face(prediction, conf_thres=0.25, iou_thres=0.45, classe
         if not x.shape[0]:
             continue
 
+        x[:, -1:] *= x[:, 4:5]
+
         # Box (center x, center y, width, height) to (x1, y1, x2, y2)
         box = xywh2xyxy(x[:, :4])
         conf = np.max(x[:, -1:], axis=1, keepdims=True)
         j = np.argmax(x[:, -1:], axis=1).reshape(conf.shape)
-
-        x = np.concatenate((box, conf, j.astype(np.float32)), 1)[conf.reshape(-1) > conf_thres]
+        if is_contain_landmark:
+            x = np.concatenate((box, conf, x[:, 5:13], j.astype(np.float32)), 1)[conf.reshape(-1) > conf_thres]
+        else: 
+            x = np.concatenate((box, conf, j.astype(np.float32)), 1)[conf.reshape(-1) > conf_thres]
 
         # Filter by class
         if classes is not None:
@@ -101,7 +138,7 @@ def non_max_suppression_face(prediction, conf_thres=0.25, iou_thres=0.45, classe
             continue
 
         # Batched NMS
-        c = x[:, 5:6] * (0 if agnostic else max_wh)  # classes
+        c = x[:, -1:] * (0 if agnostic else max_wh)  # classes
         boxes, scores = x[:, :4] + c, x[:, 4]  # boxes (offset by class), scores
         i = torchvision.ops.nms(torch.from_numpy(boxes), torch.from_numpy(scores), iou_thres).numpy()  # NMS
         #if i.shape[0] > max_det:  # limit detections
@@ -163,9 +200,20 @@ def show_results(img, xywh, conf, landmarks=[]):
     clors = [(255,0,0),(0,255,0),(0,0,255),(255,255,0),(0,255,255)]
 
     if len(landmarks) != 0:
+        lm = landmarks
+        lm_unnor = []
+        lm_unnor.append(int(lm[0] * w))
+        lm_unnor.append(int(lm[1] * h))
+        lm_unnor.append(int(lm[2] * w))
+        lm_unnor.append(int(lm[3] * h))
+        lm_unnor.append(int(lm[4] * w))
+        lm_unnor.append(int(lm[5] * h))
+        lm_unnor.append(int(lm[6] * w))
+        lm_unnor.append(int(lm[7] * h))
+        landmarks = lm_unnor
         for i in range(4):
-            point_x = int(landmarks[2 * i] * w)
-            point_y = int(landmarks[2 * i + 1] * h)
+            point_x = int(landmarks[2 * i])
+            point_y = int(landmarks[2 * i + 1])
             cv2.circle(img, (point_x, point_y), tl+1, clors[i], 5, )
 
     tf = max(tl - 1, 1)  # font thickness
@@ -226,19 +274,19 @@ def anchor_process(outputs, anchors):
         grid = make_grid(output_shape[-2], output_shape[-3])
 
         y = np.full_like(x, 0)
-        class_range = list(range(5)) + list(range(output_shape[-1] - 1, output_shape[-1]))
-        y[..., class_range] = sigmoid(x[..., class_range])
+        # class_range = list(range(13)) + list(range(output_shape[-1] - 1, output_shape[-1]))
+        # y[..., class_range] = sigmoid(x[..., class_range])
         # y[..., 5:13] = x[i][..., 5:13]
-        #y = x[i].sigmoid()
+        y = sigmoid(x)
         y[..., 0:2] = (y[..., 0:2] * 2. - 0.5 + grid) * 2**(i + 3)  # xy
         y[..., 2:4] = (y[..., 2:4] * 2) ** 2 * anchors[i]  # wh
 
-        #y[..., 5:15] = y[..., 5:15] * 8 - 4
-        # y[..., 5:7]   = y[..., 5:7] *   self.anchor_grid[i] + self.grid[i].to(x[i].device) * self.stride[i] # landmark x1 y1
-        # y[..., 7:9]   = y[..., 7:9] *   self.anchor_grid[i] + self.grid[i].to(x[i].device) * self.stride[i]# landmark x2 y2
-        # y[..., 9:11]  = y[..., 9:11] *  self.anchor_grid[i] + self.grid[i].to(x[i].device) * self.stride[i]# landmark x3 y3
-        # y[..., 11:13] = y[..., 11:13] * self.anchor_grid[i] + self.grid[i].to(x[i].device) * self.stride[i]# landmark x4 y4
-        # y[..., 13:15] = y[..., 13:15] * self.anchor_grid[i] + self.grid[i].to(x[i].device) * self.stride[i]# landmark x5 y5
+        y[..., 5:13] = y[..., 5:13] * 8 - 4
+
+        y[..., 5:7]   = y[..., 5:7] *   anchors[i] + grid * 2**(i + 3) # landmark x1 y1
+        y[..., 7:9]   = y[..., 7:9] *   anchors[i] + grid * 2**(i + 3)# landmark x2 y2
+        y[..., 9:11]  = y[..., 9:11] *  anchors[i] + grid * 2**(i + 3)# landmark x3 y3
+        y[..., 11:13] = y[..., 11:13] * anchors[i] + grid * 2**(i + 3)# landmark x4 y4
 
         #y[..., 5:7] = (y[..., 5:7] * 2 -1) * self.anchor_grid[i]  # landmark x1 y1
         #y[..., 7:9] = (y[..., 7:9] * 2 -1) * self.anchor_grid[i]  # landmark x2 y2

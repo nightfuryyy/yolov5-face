@@ -43,10 +43,12 @@ def get_mse(output, targets, width, height, paths):
     for i, path in enumerate(paths):
         for blacklist_path in blacklist_paths:
             if blacklist_path in path.split("/")[-1]:
-                # print(blacklist_path)
+                # print("blacklist_path ", blacklist_path)
                 check = i
     output = output.clone().cpu()
     targets = targets.clone()
+    if output.shape[0] != targets.shape[0]:
+        return 0
     if check != -1:
         output = torch.cat((output[:check], output[check + 1:]), axis = 0)
         targets = torch.cat((targets[:check], targets[check + 1:]), axis = 0)
@@ -148,7 +150,7 @@ def test(data,
         img /= 255.0  # 0 - 255 to 0.0 - 1.0
         targets = targets.to(device)
         nb, _, height, width = img.shape  # batch size, channels, height, width
-
+    
         with torch.no_grad():
             # Run model
             t = time_synchronized()

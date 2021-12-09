@@ -26,7 +26,11 @@ def main():
     model_path = "/home/quannd/CardDetection/KeyPointDetection/yolov5-face/runs/train/exp267/weights/71.pt"
     model_path = "/home/quannd/CardDetection/KeyPointDetection/yolov5-face/best_74_0.955/weights/74.pt"
     model_path = "/home/quannd/CardDetection/KeyPointDetection/yolov5-face-landmark/yolov5-face/weights/0.0154_mae_224.pt"
-    image_shape = 224
+    model_path = "weights/0.0083_mae_288m.pt"
+    model_path = "weights/0.0079_320s.pt"
+    model_path = "weights/0.0078_improve_cut_object.pt"
+    model_path = "/home/quannd/CardDetection/KeyPointDetection/yolov5-face-landmark/yolov5-face/runs/train/exp43/weights/159.pt"
+    image_shape = 256
     model = attempt_load(model_path, map_location=torch.device('cpu'))
     model.eval()
     half = False
@@ -60,7 +64,7 @@ def main():
     onnx.save(model, onnx_save_path)
     # onnx.save(model_onnx, save_path)
     assert check, "Simplified ONNX model could not be validated"
-    PB_SAVE_PATH = "CardDetectionOnly_v2_dynamic_shape_0.0154"
+    PB_SAVE_PATH = "CardDetectionOnly_v3_dynamic_shape_0.0081_256_whiteborder_new_anchor_improve_cutted_object"
     tf.config.experimental.enable_tensor_float_32_execution(False)
     tf_rep = prepare(model_onnx) #, training_mode=True)#, gen_tensor_dict=True)  # prepare tf representation
     print(tf_rep.tensor_dict)

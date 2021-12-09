@@ -10,7 +10,7 @@ import tensorflow as tf
 import time 
 tf.config.experimental.enable_tensor_float_32_execution(False)
 
-from save_model_ultils import anchor_process, show_results, letterbox, non_max_suppression_face, scale_coords, scale_coords_landmarks, xyxy2xywh
+from save_model_ultils import anchor_process, show_results, letterbox, non_max_suppression_face, scale_coords, scale_coords_landmarks, xyxy2xywh, show_results_v2
 
 class Model: 
     def __init__(self, model_path, anchors=[], output_names=[]):
@@ -21,26 +21,28 @@ class Model:
 
     def init_model(self, model_path, anchors, output_names):
         if len(anchors) == 0:
-            self.anchors = [[[23,29],  [43,55],  [73,105]], [[157,94],  [108,167],  [221,107]], [[155,190],  [236,156],  [241,218]]]
+            # self.anchors = [[[23,29],  [43,55],  [73,105]], [[157,94],  [108,167],  [221,107]], [[155,190],  [236,156],  [241,218]]]
+            # self.anchors = [[[80,50],  [60,90],  [120,70]], [[196,118],  [135,209],  [276,134]], [[194,238],  [295,195],  [301,272]]]
+            self.anchors = [[[64,48], [64,64], [96,64]], [[161,98], [108,160], [226,105]], [[152,211],  [229,164],  [241,220]]]
         if len(output_names) == 0:
             self.output_names = ['output_0', 'output_1', 'output_2']
         self.model = tf.saved_model.load(model_path)
         self.model = self.model.signatures["serving_default"]
-    def inference(self, image, image_size=256, conf_thres=0.5, iou_thres=0.2, return_time_infer=False):
+    def inference(self, image, image_size=320, conf_thres=0.5, iou_thres=0.2, return_time_infer=False):
         processed_image, img_for_visual = self.preprocess_scrath(image, image_size)
         tf_input = tf.convert_to_tensor(processed_image, dtype=tf.float32)
         t1 = time.time()
         outputs = self.model(tf_input)
         t2 = time.time()
-        print(t2 - t1)
         result = self.posprocess(outputs, img_shape=img_for_visual.shape[:2], orgimg_shape=image.shape, conf_thres=conf_thres, iou_thres=iou_thres) 
+        # return result
         if return_time_infer:
             return self.convert_result(result, image.shape), t2 - t1 
         else:
             return self.convert_result(result, image.shape)
         
 
-    def preprocess_scrath(self, orgi_image, img_size=256):
+    def preprocess_scrath(self, orgi_image, img_size=320):
         image = orgi_image.copy()
         h0, w0 = image.shape[:2]  # orig hw
         r = img_size / max(h0, w0)  # resize image to img_size
@@ -113,19 +115,22 @@ class Model:
             else: 
                 box = [xyxy, conf]
             new_res.append(box)
-        return new_res
-        
+        return list(sorted([[np.reshape(np.array(kps), (-1, 2)), bb, conf] for bb, conf, kps in new_res], \
+                            key=lambda x: x[2], reverse=True))        
 
 
 def main():
     # PB_MODEL_PATH = "/home/quannd/CardDetection/KeyPointDetection/yolov5-face/CardDetectionOnly_v1_dynamic_shape"
     # PB_MODEL_PATH = "/home/quannd/CardDetection/KeyPointDetection/yolov5-face/CardDetectionOnly_v1_dynamic_shape_best955"
-    PB_MODEL_PATH = "/home/quannd/CardDetection/KeyPointDetection/yolov5-face-landmark/yolov5-face/CardDetectionOnly_v2_dynamic_shape_0.0154"
+    PB_MODEL_PATH = "CardDetectionOnly_v3_dynamic_shape_0.0079s_whiteborder_new_anchor_improve_cutted_object"
+    PB_MODEL_PATH = "CardDetectionOnly_v3_dynamic_shape_0.0081_256_whiteborder_new_anchor_improve_cutted_object"
+    PB_MODEL_PATH = "model/models/idcard_detection_v2/3"
     CONF_THRESHOLD = 0.5
-    IOU_THRESHOLD = 0.5
+    IOU_THRESHOLD = 0.2
     IMAGE_DIR = "../../../one_class_yolov5_dataset/val/"
+    IMAGE_DIR = "sai_quan/"
     SAVE_DIR = "infer_savemodel_results/"
-    IMAGE_SIZE = 224
+    IMAGE_SIZE = 256
     if not os.path.isdir(SAVE_DIR):
         os.mkdir(SAVE_DIR)
     #init
@@ -135,7 +140,7 @@ def main():
     count = 0
     c = 0
     for image_path in os.listdir(IMAGE_DIR):
-        if not image_path.endswith(".jpg"):
+        if not image_path.endswith(".jpg") and not image_path.endswith(".jpeg"):
             continue
     # image_paths = ["/home/quannd/CardDetection/KeyPointDetection/yolov5-face/download3.png", "/home/quannd/CardDetection/KeyPointDetection/yolov5-face/result.jpg", ]
     # for i in range(len(image_paths)):
@@ -144,16 +149,21 @@ def main():
         image = cv2.imread(IMAGE_DIR + image_path)
         # image = cv2.imread(image_path)
         outputs = model.inference(image, IMAGE_SIZE, conf_thres=CONF_THRESHOLD, iou_thres=IOU_THRESHOLD)#, save_path=SAVE_DIR + image_path.split("/")[-1])
-        # if len(result) != 0 and save_path != '':
-        #     image = image.copy()
-        #     for box in result:
-        #         if len(box) > 2:
-        #             xywh, conf, landmark = box[0], box[1], box[2]
-        #             image = show_results(image, xywh, conf, landmark)
-        #         else:
-        #             xywh, conf = box[0], box[1]
-        #             image = show_results(image, xywh, conf)
-        #     cv2.imwrite(save_path, image)
+        save_path = SAVE_DIR + image_path.split("/")[-1]
+        if len(outputs) != 0 and save_path != '':
+            image = image.copy()
+            for box in outputs:
+                landmark, xywh, conf = box[0], box[1], box[2]
+                print(landmark)
+                image =  show_results_v2(image, xywh, conf, landmark.tolist())
+
+                # if len(box) > 2:
+                #     xywh, conf, landmark = box[0], box[1], box[2]
+                #     image = show_results(image, xywh, conf, landmark)
+                # else:
+                #     xywh, conf = box[0], box[1]
+                #     image = show_results(image, xywh, conf)
+            cv2.imwrite(save_path, image)
         print("==============================")
         print(outputs)
 

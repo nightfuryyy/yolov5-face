@@ -10,3 +10,10 @@ CardDetectionOnly_v*
 best*
 *.onnx
 weights/*
+cornercut/
+labelme/
+model/
+new_id/
+newtestsavemodel.py
+test_image/
+test_image_2/

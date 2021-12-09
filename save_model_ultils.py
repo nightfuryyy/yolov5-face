@@ -188,6 +188,33 @@ def xyxy2xywh(x):
     y[:, 3] = x[:, 3] - x[:, 1]  # height
     return y
 
+def show_results_v2(img, xywh, conf, landmarks=[]):
+    h, w, c = img.shape
+    tl = 1 or round(0.05 * (h + w) / 2) + 1  # line/font thickness
+    # x1 = int((xywh[0] * w - 0.5 * xywh[2] * w))
+    # y1 = int((xywh[1] * h - 0.5 * xywh[3] * h))
+    # x2 = int((xywh[0] * w + 0.5 * xywh[2] * w))
+    # y2 = int((xywh[1] * h + 0.5 * xywh[3] * h))
+    x1 = xywh[0]
+    y1 = xywh[1] 
+    x2 = xywh[2] 
+    y2 = xywh[3]
+    # cv2.rectangle(img, (x1,y1), (x2, y2), (0,255,0), int(tl), cv2.LINE_AA)
+
+    clors = [(255,0,0),(0,255,0),(0,0,255),(255,255,0),(0,255,255)]
+
+    if len(landmarks) != 0:
+        for i in range(4):
+            point_x = int(landmarks[i][0])
+            point_y = int(landmarks[i][1])
+            cv2.circle(img, (point_x, point_y), tl+1, clors[i], 5, )
+
+    tf = max(tl - 1, 1)  # font thickness
+    label = str(conf)[:5]
+    cv2.putText(img, label, (x1, y1 - 2), 0, tl / 3, [225, 255, 255], thickness=tf, lineType=cv2.LINE_AA)
+    return img
+
+
 def show_results(img, xywh, conf, landmarks=[]):
     h, w, c = img.shape
     tl = 1 or round(0.002 * (h + w) / 2) + 1  # line/font thickness

@@ -20,7 +20,7 @@ from tqdm import tqdm
 from utils.general import xyxy2xywh, xywh2xyxy, clean_str
 from utils.torch_utils import torch_distributed_zero_first
 
-# bfb85e7 33_3 2031421_back 202104061205 202104141425 202104160925 202108041723 202108091851 2047867 343bcfd2c 
+# bfb85e7 33_3 2031421_back 202104061205 202104141425 202104160925 202108041723 202108091851 2047867 914aaf0333 0adeae3c6d 343bcfd2c 
 
 # Parameters
 help_url = 'https://github.com/ultralytics/yolov5/wiki/Train-Custom-Data'
@@ -236,13 +236,16 @@ class LoadFaceImagesAndLabels(Dataset):  # for training/testing
                     if len(l):
                         # assert l.shape[1] == 15, 'labels require 15 columns each'
                         assert (l >= -1).all(), 'negative labels'
-                        assert (l[:, 1:] <= 1).all(), 'non-normalized or out of bounds coordinate labels'
+                        assert (l[:, 1:] <= 1.005).all(), 'non-normalized or out of bounds coordinate labels'
                         assert np.unique(l, axis=0).shape[0] == l.shape[0], 'duplicate labels'
+                        l[:, 1:] = np.minimum(l[:, 1:], np.ones_like(l[:, 1:]))
                     else:
                         ne += 1  # label empty
+                        print("empty:           ", lb_file)
                         l = np.zeros((0, 13), dtype=np.float32)
                 else:
                     nm += 1  # label missing
+                    print("missing:           ", lb_file)
                     l = np.zeros((0, 13), dtype=np.float32)
                 x[im_file] = [l, shape]
             except Exception as e:
@@ -297,7 +300,7 @@ class LoadFaceImagesAndLabels(Dataset):  # for training/testing
             # shapes = (h0, w0), ((h / h0, w / w0), pad)  # for COCO mAP rescaling
 
             #resize only #scaleFill = True
-            img, ratio, pad = letterbox(img, shape, auto=False, scaleFill=True, scaleup=self.augment)
+            img, ratio, pad = letterbox(img, shape, auto=False, scaleup=self.augment)
             shapes = (h0, w0), ((h / h0, w / w0), pad) 
             # Load labels
             labels = []
@@ -397,6 +400,7 @@ class LoadFaceImagesAndLabels(Dataset):  # for training/testing
                     labels[:, [1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12]] = labels[:, [2, 1, 4, 3, 12, 11, 6, 5, 8, 7, 10, 9]]
                     labels[:, [1, 5, 7, 9, 11]] = 1 - labels[:, [1, 5, 7, 9, 11]]
  
+    
         labels_out = torch.zeros((nL, 14))
         if nL:
             labels_out[:, 1:] = torch.from_numpy(labels)
@@ -412,7 +416,7 @@ class LoadFaceImagesAndLabels(Dataset):  # for training/testing
         # if nL:
         #     print( ' : landmarks : ', torch.max(labels_out[:, 5:15]), '  ---   ', torch.min(labels_out[:, 5:15]))
         return torch.from_numpy(img), labels_out, self.img_files[index], shapes
-
+    
     @staticmethod
     def collate_fn(batch):
         img, label, path, shapes = zip(*batch)  # transposed
@@ -456,8 +460,8 @@ def get_augmentations():
             # ),
             albumentations.OneOf([
                 albumentations.Blur(
-                    blur_limit=(3, 11),
-                    p=0.8
+                    blur_limit=(5, 13),
+                    p=0.6
                 ),
                 albumentations.MedianBlur(
                     blur_limit=(3,5),
@@ -465,15 +469,15 @@ def get_augmentations():
                 ),
                 albumentations.MotionBlur(
                     blur_limit=(3,5),
-                    p=0.1
+                    p=0.3
                 ),
             ], p=0.3),
             # albumentations.augmentations.transforms.CLAHE(
             #     clip_limit=8.0, tile_grid_size=(8, 8), always_apply=False, p=0.3
             # ),
-            # albumentations.augmentations.transforms.GaussNoise(
-            #     var_limit=(0, 20), p=0.2
-            # ),
+            albumentations.augmentations.transforms.GaussNoise(
+                var_limit=(10, 25), p=0.2
+            ),
             # albumentations.augmentations.transforms.JpegCompression(
             #     quality_lower=99, quality_upper=100, p=1.0
             # ),
@@ -504,7 +508,7 @@ def showlabels(img, boxs, landmarks, path):
     cv2.imwrite("test_image/" + path + "test.jpg", img)
     cv2.imwrite("test_image/" + path + "testori.jpg", ori)
     print("==========")
-    print("test_image/" + path + "testori.jpg")
+    print("test_image_show_label/" + path + "testori.jpg")
     print(boxs)
     print(landmarks)
     # cv2.imshow('test', img)
@@ -976,10 +980,9 @@ def random_perspective(img, targets=(), degrees=10, translate=.1, scale=.1, shea
     # Rotation and Scale
     R = np.eye(3)
     a = random.uniform(-degrees, degrees)
-    # if random.random() < 0.2:
-    #     a += random.choice([90])  # add 90deg rotations to small rotations
+
     if random.random() < 0.5:
-        s = random.uniform(1 - scale, 1)
+        s = random.uniform(1 - scale, 1 + 0.2)
     else:
         s = 1
     # s = 2 ** random.uniform(-scale, scale)
@@ -1047,17 +1050,26 @@ def random_perspective(img, targets=(), degrees=10, translate=.1, scale=.1, shea
     C = np.eye(3)
     C[0, 2] += x_min # x translation (pixels)
     C[1, 2] += y_min # y translation (pixels)
-    C[0, 0] = width / (width + (x_max + x_min*2))
-    C[1, 1] = height / (height + (y_max + y_min*2))
+    C[0, 0] = width / (width + (x_max + x_min*1.7))
+    C[1, 1] = height / (height + (y_max + y_min*1.7))
+    if random.random() < 0.4:
+        C[0, 0] = random.uniform(1.0, 1.3) * width / (width + (x_max + x_min*1.7))
+        C[1, 1] = random.uniform(1.0, 1.3) * height / (height + (y_max + y_min*1.7))
     M = C @ M
     # new_height = int(width + (x_max + x_min)) 
     # new_width = int(height + (y_max + y_min))
 
     if (border[0] != 0) or (border[1] != 0) or (M != np.eye(3)).any():  # image changed
         if perspective:
-            img = cv2.warpPerspective(img, M, dsize=(new_width, new_height), borderValue=(114, 114, 114))
+            # img = cv2.warpPerspective(img, M, dsize=(new_width, new_height), borderValue=(114, 114, 114))
+            if random.random() < 0.3:
+                img = cv2.warpPerspective(img, M, dsize=(new_width, new_height), borderValue=(255, 255, 255))
+            elif random.random() < 0.5:
+                img = cv2.warpPerspective(img, M, dsize=(new_width, new_height), borderValue=(114, 114, 114))
+            else:
+                img = cv2.warpPerspective(img, M, dsize=(new_width, new_height), borderValue=(0, 0, 0))
         else:  # affine
-            img = cv2.warpAffine(img, M[:2], dsize=(new_width, new_height), borderValue=(114, 114, 114))
+            img = cv2.warpAffine(img, M[:2], dsize=(new_width, new_height), borderValue=(255, 255, 255))
         img = cv2.resize(img, (width, height))
 
     # Visualize

@@ -138,8 +138,12 @@ def compute_loss(p, targets, model, is_contain_landmark=True):  # predictions, t
     # Losses
     nt = 0  # number of targets
     no = len(p)  # number of outputs
-    balance = [0.05, 0.225, 0.225] if no == 3 else [4.0, 1.0, 0.4, 0.1]  # P3-5 or P3-6
-    balance_lm = [0.1, 1.0, 1.2]
+    # balance = [0.05, 0.225, 0.225] if no == 3 else [4.0, 1.0, 0.4, 0.1]  # P3-5 or P3-6
+    # balance_lm = [0.1, 1.0, 1.2]
+
+    balance = [0.2, 0.2, 0.2] if no == 3 else [4.0, 1.0, 0.4, 0.1]  # P3-5 or P3-6
+    balance_lm = [1.0, 1.0, 1.0]
+
     for i, pi in enumerate(p):  # layer index, layer predictions
         b, a, gj, gi = indices[i]  # image, anchor, gridy, gridx
         tobj = torch.zeros_like(pi[..., 0], device=device)  # target obj
